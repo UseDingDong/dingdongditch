@@ -1,0 +1,66 @@
+{
+  "browser": {
+    "provider": "playwright",
+    "engine": "chromium",
+    "channel": "bundled",
+    "headless": true
+  },
+  "plan": {
+    "plan_id": "iframe-click-fill-local-fixture",
+    "failure_policy": "stop_on_failure",
+    "operations": [
+      {
+        "operation_id": "navigate-host",
+        "url": "../../tests/fixtures/local_test_app/iframe_host.html",
+        "timeout_ms": 30000,
+        "action": { "type": "navigate" },
+        "expectations": [
+          {
+            "type": "url",
+            "url_value": "iframe_host.html",
+            "url_match": "contains"
+          }
+        ]
+      },
+      {
+        "operation_id": "fill-inside-iframe",
+        "url": "../../tests/fixtures/local_test_app/iframe_host.html",
+        "timeout_ms": 15000,
+        "action": {
+          "type": "fill",
+          "text": "iframe-plan-demo",
+          "frame": { "strategy": "test_id", "value": "unique-frame" },
+          "locator": { "strategy": "test_id", "value": "frame-input" }
+        },
+        "expectations": [
+          {
+            "type": "attribute",
+            "attribute_name": "value",
+            "attribute_value": "iframe-plan-demo",
+            "frame": { "strategy": "test_id", "value": "unique-frame" },
+            "locator": { "strategy": "test_id", "value": "frame-input" }
+          }
+        ]
+      },
+      {
+        "operation_id": "click-inside-iframe",
+        "url": "../../tests/fixtures/local_test_app/iframe_host.html",
+        "timeout_ms": 15000,
+        "action": {
+          "type": "click",
+          "frame": { "strategy": "test_id", "value": "unique-frame" },
+          "locator": { "strategy": "test_id", "value": "frame-click" }
+        },
+        "expectations": [
+          {
+            "type": "attribute",
+            "attribute_name": "data-state",
+            "attribute_value": "clicked",
+            "frame": { "strategy": "test_id", "value": "unique-frame" },
+            "locator": { "strategy": "test_id", "value": "frame-click" }
+          }
+        ]
+      }
+    ]
+  }
+}

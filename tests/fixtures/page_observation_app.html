@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <title>Observation Fixture</title>
+  <style>
+    body { margin: 0; font: 16px sans-serif; }
+    header, main, footer { padding: 16px; }
+    #modes { display: flex; gap: 12px; }
+    #scrollbox { height: 100px; overflow-y: scroll; border: 1px solid; }
+    #scrollbox > div { height: 400px; }
+    dialog { width: 320px; }
+  </style>
+</head>
+<body>
+  <header><nav aria-label="Primary"><a href="#main">Home</a></nav></header>
+  <main id="main">
+    <section aria-label="Mode selector" id="modes" role="toolbar">
+      <button data-testid="time" aria-pressed="true">Time</button>
+      <button aria-pressed="false">Words</button>
+      <button role="tab" aria-selected="true">Current tab</button>
+      <button role="tab" aria-selected="false">Other tab</button>
+      <button class="active">Custom active</button>
+      <button>Duplicate</button><button>Duplicate</button>
+    </section>
+    <form aria-label="Typing">
+      <label for="typing">Typing input</label>
+      <input id="typing" placeholder="Type here" autofocus>
+      <input aria-label="Password" type="password" value="super-secret">
+      <button disabled>Disabled</button>
+      <button style="display:none">Hidden</button>
+    </form>
+    <div id="scrollbox"><div><button>Deep control</button></div></div>
+  </main>
+  <footer>Footer text</footer>
+  <dialog open aria-label="Settings"><button>Close</button></dialog>
+</body>
+</html>

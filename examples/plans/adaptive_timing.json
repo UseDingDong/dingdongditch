@@ -1,0 +1,96 @@
+{
+  "browser": {
+    "provider": "playwright",
+    "engine": "chromium",
+    "channel": "bundled",
+    "headless": true
+  },
+  "plan": {
+    "plan_id": "adaptive-timing-local-fixture",
+    "failure_policy": "stop_on_failure",
+    "initial_plan_timeout_ms": 8000,
+    "adaptive_timeout_enabled": true,
+    "max_plan_timeout_ms": 60000,
+    "operations": [
+      {
+        "operation_id": "navigate",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": { "type": "navigate" },
+        "expectations": [
+          {
+            "type": "url",
+            "url_value": "index.html",
+            "url_match": "contains"
+          }
+        ]
+      },
+      {
+        "operation_id": "wait-video-ready",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "wait_for",
+          "wait_timeout_ms": 20000,
+          "wait_condition": {
+            "type": "text_present",
+            "locator": { "strategy": "test_id", "value": "video-ready" },
+            "text_value": "video-ready",
+            "text_match": "exact"
+          }
+        },
+        "expectations": [
+          {
+            "type": "text",
+            "locator": { "strategy": "test_id", "value": "video-ready" },
+            "text_value": "video-ready",
+            "text_match": "exact"
+          }
+        ]
+      },
+      {
+        "operation_id": "play",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "click",
+          "locator": { "strategy": "test_id", "value": "play-ending-video" }
+        },
+        "expectations": [
+          {
+            "type": "element_exists",
+            "locator": { "strategy": "test_id", "value": "play-ending-video" },
+            "exists": true
+          }
+        ]
+      },
+      {
+        "operation_id": "wait-ended",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "wait_for",
+          "wait_timeout_ms": 250,
+          "wait_condition": {
+            "type": "video_ended",
+            "locator": { "strategy": "test_id", "value": "ending-video" }
+          }
+        },
+        "expectations": []
+      },
+      {
+        "operation_id": "multi-select",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "select_option",
+          "locator": { "strategy": "test_id", "value": "multi-color-select" },
+          "option_values": ["red", "blue"]
+        },
+        "expectations": [
+          {
+            "type": "attribute",
+            "locator": { "strategy": "test_id", "value": "multi-select-output" },
+            "attribute_name": "data-value",
+            "attribute_value": "red,blue"
+          }
+        ]
+      }
+    ]
+  }
+}

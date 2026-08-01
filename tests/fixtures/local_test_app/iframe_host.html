@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Iframe Host Fixture</title>
+  <style>
+    body { font-family: sans-serif; margin: 1.5rem; }
+    iframe { width: 420px; height: 280px; border: 1px solid #888; display: block; margin: 0.75rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Iframe Host</h1>
+
+  <p data-testid="main-marker">main-document</p>
+  <button type="button" data-testid="main-click" data-state="idle" id="main-click">Main Click</button>
+  <input data-testid="main-input" id="main-input" type="text" value="" />
+
+  <!-- Unique same-origin iframe -->
+  <iframe
+    data-testid="unique-frame"
+    id="unique-frame"
+    title="Unique Frame"
+    src="iframe_child.html"
+  ></iframe>
+
+  <!-- Ambiguous pair (same test id) -->
+  <iframe
+    data-testid="ambiguous-frame"
+    class="ambiguous-frame"
+    title="Ambiguous Frame A"
+    src="iframe_child.html"
+  ></iframe>
+  <iframe
+    data-testid="ambiguous-frame"
+    class="ambiguous-frame"
+    title="Ambiguous Frame B"
+    src="iframe_child.html"
+  ></iframe>
+
+  <!-- Detachable iframe -->
+  <div id="detach-slot">
+    <iframe
+      data-testid="detach-frame"
+      id="detach-frame"
+      title="Detach Frame"
+      src="iframe_child.html"
+    ></iframe>
+  </div>
+  <button type="button" data-testid="detach-trigger" id="detach-trigger">Detach iframe</button>
+
+  <!-- Non-frame element for not_a_frame -->
+  <div data-testid="not-a-frame" id="not-a-frame">not-a-frame</div>
+
+  <!-- Cross-origin iframe: filled by script using 127.0.0.1 vs localhost -->
+  <iframe
+    data-testid="cross-origin-frame"
+    id="cross-origin-frame"
+    title="Cross Origin Frame"
+  ></iframe>
+
+  <script>
+    document.getElementById("main-click").addEventListener("click", () => {
+      document.getElementById("main-click").setAttribute("data-state", "clicked");
+    });
+    document.getElementById("detach-trigger").addEventListener("click", () => {
+      const slot = document.getElementById("detach-slot");
+      slot.innerHTML = "";
+    });
+    (function setCrossOrigin() {
+      const frame = document.getElementById("cross-origin-frame");
+      const u = new URL(window.location.href);
+      // localhost <-> 127.0.0.1 are distinct origins for browsers.
+      const altHost = u.hostname === "localhost" ? "127.0.0.1" : "localhost";
+      u.hostname = altHost;
+      u.pathname = u.pathname.replace(/iframe_host\.html$/, "iframe_child.html");
+      if (!u.pathname.endsWith("iframe_child.html")) {
+        const parts = u.pathname.split("/");
+        parts[parts.length - 1] = "iframe_child.html";
+        u.pathname = parts.join("/");
+      }
+      frame.src = u.toString();
+    })();
+  </script>
+</body>
+</html>

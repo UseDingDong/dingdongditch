@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Iframe Child Fixture</title>
+  <style>
+    body { font-family: sans-serif; margin: 1rem; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h2 data-testid="frame-heading">Inside Frame</h2>
+  <button type="button" data-testid="frame-click" data-state="idle" id="frame-click">
+    Frame Click
+  </button>
+  <label for="frame-input">Frame input</label>
+  <input id="frame-input" data-testid="frame-input" type="text" value="" />
+  <span data-testid="frame-status" data-state="idle">idle</span>
+  <button type="button" data-testid="frame-reveal" id="frame-reveal">Reveal delayed</button>
+  <span data-testid="frame-delayed" id="frame-delayed" class="hidden">delayed-visible</span>
+  <div style="height: 400px;"></div>
+  <button type="button" data-testid="frame-below-fold" id="frame-below-fold">Below fold</button>
+
+  <script>
+    document.getElementById("frame-click").addEventListener("click", () => {
+      const btn = document.getElementById("frame-click");
+      btn.setAttribute("data-state", "clicked");
+      const status = document.querySelector("[data-testid=frame-status]");
+      status.setAttribute("data-state", "clicked");
+      status.textContent = "clicked";
+    });
+    document.getElementById("frame-reveal").addEventListener("click", () => {
+      setTimeout(() => {
+        document.getElementById("frame-delayed").classList.remove("hidden");
+      }, 400);
+    });
+  </script>
+</body>
+</html>

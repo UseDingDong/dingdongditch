@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dingdongditch"
+version = "0.2.0"
+description = "Model-neutral browser execution runtime (bundled Chromium + Firefox + WebKit)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "playwright>=1.40.0",
+]
+
+[project.optional-dependencies]
+windows-desktop = [
+  "pywinauto>=0.6.9,<0.7",
+  "Pillow>=10.0",
+]
+dev = [
+  "pytest>=7.4.0",
+]
+
+[project.scripts]
+dingdongditch = "dingdongditch.cli:console_main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dingdongditch*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

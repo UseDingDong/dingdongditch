@@ -1,0 +1,9 @@
+<!doctype html><html><body>
+<h1 data-testid="dialog-heading">Dialog Fixture</h1>
+<button data-testid="alert-button" onclick="alert('hello alert')">Alert</button>
+<button data-testid="confirm-button" onclick="confirm('confirm me')">Confirm</button>
+<button data-testid="prompt-button" onclick="prompt('prompt me', '')">Prompt</button>
+<button data-testid="two-dialog-button" onclick="alert('one'); alert('two')">Two dialogs</button>
+<button data-testid="no-dialog-button" type="button">No dialog</button>
+<script>window.addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = 'leave?'; });</script>
+</body></html>

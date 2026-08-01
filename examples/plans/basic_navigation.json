@@ -1,0 +1,166 @@
+{
+  "browser": {
+    "provider": "playwright",
+    "engine": "chromium",
+    "channel": "bundled",
+    "headless": true
+  },
+  "plan": {
+    "plan_id": "basic-navigation-local-fixture",
+    "failure_policy": "stop_on_failure",
+    "operations": [
+      {
+        "operation_id": "navigate",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "navigate"
+        },
+        "expectations": [
+          {
+            "type": "url",
+            "url_value": "index.html",
+            "url_match": "contains"
+          }
+        ]
+      },
+      {
+        "operation_id": "wait-load",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "wait_for",
+          "wait_condition": {
+            "type": "load_state",
+            "load_state": "domcontentloaded"
+          }
+        },
+        "expectations": [
+          {
+            "type": "element_exists",
+            "locator": { "strategy": "test_id", "value": "text-input" },
+            "exists": true
+          }
+        ]
+      },
+      {
+        "operation_id": "fill-text",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "fill",
+          "locator": { "strategy": "test_id", "value": "text-input" },
+          "text": "plan-runner"
+        },
+        "expectations": [
+          {
+            "type": "attribute",
+            "locator": { "strategy": "test_id", "value": "text-input" },
+            "attribute_name": "value",
+            "attribute_value": "plan-runner"
+          }
+        ]
+      },
+      {
+        "operation_id": "press-enter",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "press_key",
+          "locator": { "strategy": "test_id", "value": "key-input" },
+          "key": "Tab"
+        },
+        "expectations": [
+          {
+            "type": "element_exists",
+            "locator": { "strategy": "test_id", "value": "key-input" },
+            "exists": true
+          }
+        ]
+      },
+      {
+        "operation_id": "click-target",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "click",
+          "locator": { "strategy": "test_id", "value": "target-control" }
+        },
+        "expectations": [
+          {
+            "type": "attribute",
+            "locator": { "strategy": "test_id", "value": "target-control" },
+            "attribute_name": "data-state",
+            "attribute_value": "active"
+          }
+        ]
+      },
+      {
+        "operation_id": "wait-result-text",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "wait_for",
+          "wait_condition": {
+            "type": "text_present",
+            "locator": { "strategy": "test_id", "value": "result-item" },
+            "text_value": "result-item-visible",
+            "text_match": "contains"
+          }
+        },
+        "expectations": [
+          {
+            "type": "element_visible",
+            "locator": { "strategy": "test_id", "value": "result-item" },
+            "visible": true
+          }
+        ]
+      },
+      {
+        "operation_id": "wait-attr",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "wait_for",
+          "wait_condition": {
+            "type": "attribute_equals",
+            "locator": { "strategy": "test_id", "value": "state-indicator" },
+            "attribute_name": "data-state",
+            "attribute_value": "active"
+          }
+        },
+        "expectations": [
+          {
+            "type": "attribute",
+            "locator": { "strategy": "test_id", "value": "state-indicator" },
+            "attribute_name": "data-state",
+            "attribute_value": "active"
+          }
+        ]
+      },
+      {
+        "operation_id": "hover-target",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "hover",
+          "locator": { "strategy": "test_id", "value": "hover-target" }
+        },
+        "expectations": [
+          {
+            "type": "element_visible",
+            "locator": { "strategy": "test_id", "value": "hover-tooltip" },
+            "visible": true
+          }
+        ]
+      },
+      {
+        "operation_id": "scroll-below-fold",
+        "url": "../../tests/fixtures/local_test_app/index.html",
+        "action": {
+          "type": "scroll_to_target",
+          "locator": { "strategy": "test_id", "value": "below-fold" }
+        },
+        "expectations": [
+          {
+            "type": "element_in_viewport",
+            "locator": { "strategy": "test_id", "value": "below-fold" },
+            "in_viewport": true
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>DingDongDitch Milestone 1 Local Fixture</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    .hidden { display: none; }
+    #state-indicator { margin-top: 1rem; }
+    .row { margin: 0.75rem 0; }
+    .region { border: 1px solid #ccc; padding: 0.75rem; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Local Fixture</h1>
+
+  <div class="row">
+    <button type="button" data-testid="already-visible" id="already-visible">Already visible top</button>
+  </div>
+
+  <div class="row">
+    <button id="target-control" data-testid="target-control" data-state="inactive" type="button">
+      Activate Target
+    </button>
+  </div>
+
+  <div class="row">
+    <label for="text-input">Text input</label>
+    <input id="text-input" data-testid="text-input" type="text" value="" />
+  </div>
+
+  <div id="state-indicator" data-testid="state-indicator" data-state="idle">idle</div>
+
+  <div id="result-item" data-testid="result-item" class="hidden" role="status">result-item-visible</div>
+
+  <div class="row">
+    <button id="delayed-control" data-testid="delayed-control" type="button">Reveal After Delay</button>
+  </div>
+
+  <div class="row">
+    <button type="button" data-testid="delay-hide-trigger" id="delay-hide-trigger">Hide after delay</button>
+    <span data-testid="hide-soon" id="hide-soon">visible-for-hide</span>
+  </div>
+  <div class="row">
+    <button type="button" data-testid="delay-state-trigger" id="delay-state-trigger">Delay state changes</button>
+    <span data-testid="wait-text" id="wait-text">before</span>
+    <span data-testid="wait-attr" id="wait-attr" data-phase="idle">attr</span>
+    <input data-testid="wait-value" id="wait-value" type="text" value="" />
+    <input data-testid="wait-check" id="wait-check" type="checkbox" />
+    <select data-testid="wait-select" id="wait-select" aria-label="Wait select">
+      <option value="">--</option>
+      <option value="later">Later</option>
+    </select>
+  </div>
+  <div class="row">
+    <button type="button" data-testid="delay-hash-trigger" id="delay-hash-trigger">Delay hash</button>
+  </div>
+
+  <div class="row">
+    <button id="network-control" data-testid="network-control" type="button">Trigger Network</button>
+  </div>
+
+  <div class="row">
+    <button id="noop-control" data-testid="noop-control" type="button">No Outcome Change</button>
+  </div>
+
+  <div class="row">
+    <button class="ambiguous-target" data-testid="ambiguous-target" type="button">Ambiguous A</button>
+    <button class="ambiguous-target" data-testid="ambiguous-target" type="button">Ambiguous B</button>
+  </div>
+
+  <!-- Constrained-target hardening scenarios (neutral names) -->
+  <section class="region" data-testid="region-alpha" aria-label="Region Alpha">
+    <button type="button" data-testid="shared-execute-alpha" data-purpose="primary-action">Execute</button>
+    <button type="button" data-testid="execute-later-alpha">Execute later</button>
+  </section>
+
+  <section class="region" data-testid="region-beta" aria-label="Region Beta">
+    <button type="button" data-testid="shared-execute-beta" data-purpose="secondary-action">Execute</button>
+  </section>
+
+  <div class="row" data-testid="attr-pair">
+    <button type="button" data-purpose="submit-action" aria-label="Commit">Commit</button>
+    <button type="button" data-purpose="preview-action" aria-label="Commit">Commit</button>
+  </div>
+
+  <div class="row" data-testid="exclude-pair">
+    <button type="button" aria-label="Run task">Run task</button>
+    <button type="button" aria-label="Run task later">Run task later</button>
+    <button type="button" aria-label="Cancel task">Cancel task</button>
+  </div>
+
+  <div class="row" data-testid="visibility-pair">
+    <button type="button" aria-label="Reveal panel" data-testid="visible-reveal">Reveal panel</button>
+    <!-- Intentionally in-DOM but CSS-hidden; CSS primary can still match it. -->
+    <button type="button" aria-label="Reveal panel" class="hidden" data-testid="hidden-reveal" data-purpose="hidden-duplicate">Reveal panel</button>
+  </div>
+
+  <div class="row" data-testid="enabled-pair">
+    <button type="button" aria-label="Proceed" data-testid="enabled-proceed">Proceed</button>
+    <button type="button" aria-label="Proceed" disabled data-testid="disabled-proceed">Proceed</button>
+  </div>
+
+  <div class="row" data-testid="still-ambiguous">
+    <button type="button" aria-label="Twin control" data-purpose="twin-a">Twin control</button>
+    <button type="button" aria-label="Twin control" data-purpose="twin-b">Twin control</button>
+  </div>
+
+  <section class="region" data-testid="outer-region">
+    <section class="region" data-testid="inner-region">
+      <button type="button" aria-label="Nested action" data-testid="nested-action">Nested action</button>
+    </section>
+  </section>
+
+  <div class="row" data-testid="ambiguous-containers">
+    <section class="region" data-testid="dup-container">
+      <button type="button" aria-label="Boxed action">Boxed action</button>
+    </section>
+    <section class="region" data-testid="dup-container">
+      <button type="button" aria-label="Boxed action">Boxed action</button>
+    </section>
+  </div>
+
+  <!-- Basic interaction expansion fixtures -->
+  <form id="key-form" data-testid="key-form" class="row" onsubmit="event.preventDefault(); mark('enter-submitted'); return false;">
+    <label for="key-input">Key input</label>
+    <input id="key-input" data-testid="key-input" type="text" value="" />
+  </form>
+  <div class="row">
+    <button type="button" data-testid="page-key-listener" id="page-key-listener">Page key focus target</button>
+  </div>
+
+  <div class="row">
+    <label for="color-select">Color</label>
+    <select id="color-select" data-testid="color-select" aria-label="Color">
+      <option value="">--</option>
+      <option value="red">Crimson</option>
+      <option value="green">Emerald</option>
+      <option value="blue">Azure</option>
+    </select>
+    <span id="select-output" data-testid="select-output" data-value="">none</span>
+  </div>
+
+  <div class="row">
+    <label for="multi-color-select">Multi Color</label>
+    <select
+      id="multi-color-select"
+      data-testid="multi-color-select"
+      aria-label="Multi Color"
+      multiple
+      size="4"
+    >
+      <option value="red">Crimson</option>
+      <option value="green">Emerald</option>
+      <option value="blue">Azure</option>
+      <option value="yellow">Gold</option>
+    </select>
+    <span id="multi-select-output" data-testid="multi-select-output" data-value="">none</span>
+  </div>
+
+  <div class="row">
+    <label>
+      <input type="checkbox" id="agree-box" data-testid="agree-box" />
+      Agree
+    </label>
+    <label>
+      <input type="checkbox" id="prechecked-box" data-testid="prechecked-box" checked />
+      Prefers
+    </label>
+  </div>
+  <div class="row" data-testid="radio-group" role="radiogroup" aria-label="Size">
+    <label><input type="radio" name="size" data-testid="size-small" value="small" /> Small</label>
+    <label><input type="radio" name="size" data-testid="size-large" value="large" /> Large</label>
+  </div>
+  <div id="check-output" data-testid="check-output" data-agree="false" data-prefers="true">checks</div>
+
+  <div class="row" style="position: relative; display: inline-block;">
+    <button type="button" data-testid="hover-target" id="hover-target">Hover me</button>
+    <div id="hover-tooltip" data-testid="hover-tooltip" class="hidden" role="tooltip">tooltip-visible</div>
+  </div>
+
+  <div style="height: 1400px;"></div>
+  <div class="row">
+    <button type="button" data-testid="below-fold" id="below-fold">Below fold</button>
+  </div>
+
+  <!-- HTML5 video_ended wait fixtures (same-document only) -->
+  <section class="row" data-testid="video-fixtures" aria-label="Video fixtures">
+    <video data-testid="ending-video" id="ending-video" muted playsinline preload="auto">
+      <source src="short.webm" type="video/webm" />
+      <source src="short.mp4" type="video/mp4" />
+    </video>
+    <button type="button" data-testid="play-ending-video" id="play-ending-video">Play ending video</button>
+    <button type="button" data-testid="play-ending-video-mid" id="play-ending-video-mid">Play ending video from mid</button>
+    <button type="button" data-testid="play-ending-video-fast" id="play-ending-video-fast">Play ending video fast</button>
+    <button type="button" data-testid="interrupt-ending-video" id="interrupt-ending-video">Interrupt ending video</button>
+    <video data-testid="never-play-video" id="never-play-video" muted playsinline></video>
+    <video data-testid="medium-ending-video" id="medium-ending-video" muted playsinline preload="auto">
+      <source src="medium.webm" type="video/webm" />
+    </video>
+    <button type="button" data-testid="play-medium-ending-video" id="play-medium-ending-video">Play medium ending video</button>
+    <video data-testid="looping-video" id="looping-video" muted playsinline loop preload="auto">
+      <source src="short.webm" type="video/webm" />
+      <source src="short.mp4" type="video/mp4" />
+    </video>
+    <button type="button" data-testid="play-looping-video" id="play-looping-video">Play looping video</button>
+    <video data-testid="ambiguous-video" class="ambiguous-video" muted playsinline>
+      <source src="short.webm" type="video/webm" />
+      <source src="short.mp4" type="video/mp4" />
+    </video>
+    <video data-testid="ambiguous-video" class="ambiguous-video" muted playsinline>
+      <source src="short.webm" type="video/webm" />
+      <source src="short.mp4" type="video/mp4" />
+    </video>
+    <div data-testid="video-ready" id="video-ready">video-not-ready</div>
+  </section>
+
+  <section id="download-fixtures">
+    <a id="download-text" href="download-sample.txt" download="server-suggested.txt">Download sample</a>
+    <button id="delayed-download">Delayed download</button>
+    <button id="double-download">Double download</button>
+  </section>
+  <!-- Amazon-shaped regression: a remembered product identity starts off-screen. -->
+  <div style="height: 2200px" aria-hidden="true"></div>
+  <a
+    href="#amazon-product-opened"
+    data-testid="amazon-remembered-product-B0STABLE123"
+    id="amazon-remembered-product"
+  >Remembered Amazon product</a>
+  <script>
+    const indicator = document.getElementById("state-indicator");
+    const resultItem = document.getElementById("result-item");
+    const target = document.getElementById("target-control");
+    const textInput = document.getElementById("text-input");
+
+    function mark(state) {
+      indicator.textContent = state;
+      indicator.setAttribute("data-state", state);
+    }
+    document.getElementById("amazon-remembered-product").addEventListener("click", () => {
+      mark("amazon-product-opened");
+    });
+
+    target.addEventListener("click", () => {
+      target.setAttribute("data-state", "active");
+      resultItem.classList.remove("hidden");
+      mark("active");
+    });
+
+    textInput.addEventListener("input", () => {
+      mark(textInput.value ? "filled" : "idle");
+    });
+
+    document.getElementById("delayed-control").addEventListener("click", () => {
+      setTimeout(() => {
+        resultItem.classList.remove("hidden");
+        mark("delayed-ready");
+      }, 150);
+    });
+
+    document.getElementById("network-control").addEventListener("click", async () => {
+      const response = await fetch("/api/signal", { method: "GET" });
+      mark("network-" + response.status);
+      indicator.setAttribute("data-state", "network-done");
+    });
+
+    document.getElementById("noop-control").addEventListener("click", () => {
+      // Intentionally does not change declared outcomes.
+    });
+
+    document.querySelectorAll("[data-testid='shared-execute-alpha']").forEach((el) => {
+      el.addEventListener("click", () => mark("alpha-executed"));
+    });
+    document.querySelectorAll("[data-testid='shared-execute-beta']").forEach((el) => {
+      el.addEventListener("click", () => mark("beta-executed"));
+    });
+    document.querySelectorAll("[data-purpose='submit-action']").forEach((el) => {
+      el.addEventListener("click", () => mark("commit-submit"));
+    });
+    document.querySelectorAll("[data-purpose='preview-action']").forEach((el) => {
+      el.addEventListener("click", () => mark("commit-preview"));
+    });
+    document.querySelectorAll("[aria-label='Run task']").forEach((el) => {
+      el.addEventListener("click", () => mark("run-task"));
+    });
+    document.querySelectorAll("[data-testid='visible-reveal']").forEach((el) => {
+      el.addEventListener("click", () => mark("revealed-visible"));
+    });
+    document.querySelectorAll("[data-testid='enabled-proceed']").forEach((el) => {
+      el.addEventListener("click", () => mark("proceeded"));
+    });
+    document.querySelectorAll("[data-testid='nested-action']").forEach((el) => {
+      el.addEventListener("click", () => mark("nested-clicked"));
+    });
+
+    const keyInput = document.getElementById("key-input");
+    keyInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        mark("enter-submitted");
+      }
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        mark("escape-pressed");
+      }
+    }, true);
+
+    const colorSelect = document.getElementById("color-select");
+    const selectOutput = document.getElementById("select-output");
+    colorSelect.addEventListener("change", () => {
+      const opt = colorSelect.options[colorSelect.selectedIndex];
+      selectOutput.textContent = opt ? opt.textContent : "none";
+      selectOutput.setAttribute("data-value", colorSelect.value || "");
+      mark("color-" + (colorSelect.value || "none"));
+    });
+
+    const multiColorSelect = document.getElementById("multi-color-select");
+    const multiSelectOutput = document.getElementById("multi-select-output");
+    multiColorSelect.addEventListener("change", () => {
+      const vals = Array.from(multiColorSelect.selectedOptions).map((o) => o.value);
+      multiSelectOutput.textContent = vals.length ? vals.join(",") : "none";
+      multiSelectOutput.setAttribute("data-value", vals.join(","));
+      mark("multi-color-" + (vals.length ? vals.join("-") : "none"));
+    });
+
+    const agree = document.getElementById("agree-box");
+    const prefers = document.getElementById("prechecked-box");
+    const checkOut = document.getElementById("check-output");
+    function syncChecks() {
+      checkOut.setAttribute("data-agree", agree.checked ? "true" : "false");
+      checkOut.setAttribute("data-prefers", prefers.checked ? "true" : "false");
+      mark(
+        "agree-" + (agree.checked ? "on" : "off") +
+        "-prefers-" + (prefers.checked ? "on" : "off")
+      );
+    }
+    agree.addEventListener("change", syncChecks);
+    prefers.addEventListener("change", syncChecks);
+    document.querySelectorAll('input[name="size"]').forEach((el) => {
+      el.addEventListener("change", () => {
+        mark("size-" + el.value);
+      });
+    });
+    syncChecks();
+
+    const hoverTarget = document.getElementById("hover-target");
+    const tooltip = document.getElementById("hover-tooltip");
+    hoverTarget.addEventListener("mouseenter", () => {
+      tooltip.classList.remove("hidden");
+      mark("hovered");
+    });
+    hoverTarget.addEventListener("mouseleave", () => {
+      tooltip.classList.add("hidden");
+    });
+
+    document.getElementById("below-fold").addEventListener("click", () => {
+      mark("below-clicked");
+    });
+
+    document.getElementById("delay-hide-trigger").addEventListener("click", () => {
+      setTimeout(() => {
+        document.getElementById("hide-soon").classList.add("hidden");
+        mark("hidden-ready");
+      }, 150);
+    });
+
+    document.getElementById("delay-state-trigger").addEventListener("click", () => {
+      setTimeout(() => {
+        document.getElementById("wait-text").textContent = "after";
+        document.getElementById("wait-attr").setAttribute("data-phase", "ready");
+        document.getElementById("wait-value").value = "ready-value";
+        document.getElementById("wait-check").checked = true;
+        document.getElementById("wait-select").value = "later";
+        mark("wait-states-ready");
+      }, 150);
+    });
+
+    document.getElementById("delay-hash-trigger").addEventListener("click", () => {
+      setTimeout(() => {
+        location.hash = "waited";
+        mark("hash-ready");
+      }, 150);
+    });
+
+    // Static short clips: prefer webm (Firefox), fall back to mp4 (WebKit/Chromium).
+    const videoReady = document.getElementById("video-ready");
+    const endingVideo = document.getElementById("ending-video");
+    let interruptTimer = null;
+
+    function preferredClip() {
+      const probe = document.createElement("video");
+      const ua = navigator.userAgent || "";
+      const isWebKit = /AppleWebKit/i.test(ua) && !/Chrome|Chromium|Edg/i.test(ua);
+      if (isWebKit && probe.canPlayType("video/mp4")) {
+        return "short.mp4";
+      }
+      if (probe.canPlayType('video/webm; codecs="vp8"')) {
+        return "short.webm";
+      }
+      if (probe.canPlayType("video/webm")) {
+        return "short.webm";
+      }
+      if (probe.canPlayType("video/mp4")) {
+        return "short.mp4";
+      }
+      return "short.webm";
+    }
+
+    function applyClipSources() {
+      const clip = preferredClip();
+      document
+        .querySelectorAll(
+          "[data-testid=video-fixtures] video:not([data-testid=never-play-video]):not([data-testid=medium-ending-video])"
+        )
+        .forEach((video) => {
+          video.tabIndex = -1;
+          video.querySelectorAll("source").forEach((s) => s.remove());
+          video.src = clip;
+          video.load();
+        });
+    }
+    applyClipSources();
+
+    function markVideoReadyWhenCanPlay() {
+      const done = () => {
+        if (videoReady.textContent === "video-ready") {
+          return;
+        }
+        // Do not call mark() — avoids clobbering state-indicator used by other tests.
+        videoReady.textContent = "video-ready";
+      };
+      if (endingVideo.readyState >= 1) {
+        done();
+        return;
+      }
+      endingVideo.addEventListener("loadedmetadata", done, { once: true });
+      endingVideo.addEventListener(
+        "error",
+        () => {
+          if (videoReady.textContent === "video-ready") {
+            return;
+          }
+          videoReady.textContent = "video-error";
+        },
+        { once: true },
+      );
+      setTimeout(() => {
+        if (videoReady.textContent === "video-not-ready") {
+          videoReady.textContent = "video-ready";
+        }
+      }, 2000);
+    }
+    markVideoReadyWhenCanPlay();
+
+    document.getElementById("play-ending-video").addEventListener("click", async () => {
+      if (interruptTimer) {
+        clearTimeout(interruptTimer);
+        interruptTimer = null;
+      }
+      try {
+        endingVideo.loop = false;
+        endingVideo.playbackRate = 1;
+        endingVideo.pause();
+        endingVideo.currentTime = 0;
+        await endingVideo.play();
+        mark("ending-video-playing");
+      } catch (err) {
+        mark("ending-video-play-failed");
+      }
+    });
+
+    document.getElementById("play-ending-video-mid").addEventListener("click", async () => {
+      if (interruptTimer) {
+        clearTimeout(interruptTimer);
+        interruptTimer = null;
+      }
+      try {
+        endingVideo.loop = false;
+        endingVideo.playbackRate = 1;
+        endingVideo.pause();
+        const mid = Number.isFinite(endingVideo.duration) && endingVideo.duration > 0
+          ? endingVideo.duration * 0.5
+          : 0.4;
+        endingVideo.currentTime = mid;
+        await endingVideo.play();
+        mark("ending-video-playing-mid");
+      } catch (err) {
+        mark("ending-video-play-failed");
+      }
+    });
+
+    document.getElementById("play-ending-video-fast").addEventListener("click", async () => {
+      if (interruptTimer) {
+        clearTimeout(interruptTimer);
+        interruptTimer = null;
+      }
+      try {
+        endingVideo.loop = false;
+        endingVideo.playbackRate = 2;
+        endingVideo.pause();
+        endingVideo.currentTime = 0;
+        await endingVideo.play();
+        mark("ending-video-playing-fast");
+      } catch (err) {
+        mark("ending-video-play-failed");
+      }
+    });
+
+    document.getElementById("interrupt-ending-video").addEventListener("click", async () => {
+      if (interruptTimer) {
+        clearTimeout(interruptTimer);
+        interruptTimer = null;
+      }
+      try {
+        endingVideo.loop = false;
+        endingVideo.playbackRate = 1;
+        endingVideo.pause();
+        endingVideo.currentTime = 0;
+        await endingVideo.play();
+        interruptTimer = setTimeout(() => {
+          endingVideo.pause();
+          mark("ending-video-interrupted");
+        }, 120);
+        mark("ending-video-playing");
+      } catch (err) {
+        mark("ending-video-play-failed");
+      }
+    });
+
+    const loopingVideo = document.getElementById("looping-video");
+    document.getElementById("play-looping-video").addEventListener("click", async () => {
+      try {
+        loopingVideo.pause();
+        loopingVideo.currentTime = 0;
+        await loopingVideo.play();
+        mark("looping-video-playing");
+      } catch (err) {
+        mark("looping-video-play-failed");
+      }
+    });
+
+    const mediumEndingVideo = document.getElementById("medium-ending-video");
+    document.getElementById("play-medium-ending-video").addEventListener("click", async () => {
+      try {
+        mediumEndingVideo.loop = false;
+        mediumEndingVideo.playbackRate = 1;
+        mediumEndingVideo.pause();
+        mediumEndingVideo.currentTime = 0;
+        await mediumEndingVideo.play();
+        mark("medium-ending-video-playing");
+      } catch (err) {
+        mark("medium-ending-video-play-failed");
+      }
+    });
+    document.getElementById("delayed-download").addEventListener("click", () => {
+      setTimeout(() => document.getElementById("download-text").click(), 100);
+    });
+    document.getElementById("double-download").addEventListener("click", () => {
+      document.getElementById("download-text").click();
+      setTimeout(() => document.getElementById("download-text").click(), 20);
+    });
+  </script>
+</body>
+</html>

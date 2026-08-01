@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Popup Fixture</title></head>
+<body>
+  <h1 data-testid="opener-heading">Popup Fixture</h1>
+  <a data-testid="new-tab-link" href="popup_target.html" target="_blank">New tab</a>
+  <button data-testid="popup-button" onclick="window.open('popup_target.html', 'fixture-popup', 'width=500,height=400')">Popup</button>
+  <button data-testid="no-popup-button" type="button">No popup</button>
+  <button data-testid="two-pages-button" onclick="window.open('popup_target.html?one'); window.open('popup_target.html?two')">Two pages</button>
+  <button data-testid="closing-popup-button" onclick="window.open('popup_close.html')">Closing popup</button>
+  <button data-testid="redirect-popup-button" onclick="window.open('/popup-redirect')">Redirect popup</button>
+  <button data-testid="delayed-popup-button" onclick="setTimeout(() => window.open('popup_target.html?delayed'), 5000)">Delayed popup</button>
+</body>
+</html>
