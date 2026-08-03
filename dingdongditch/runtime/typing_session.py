@@ -16,6 +16,7 @@ from dingdongditch.contract.operation import (
     Locator,
     Operation,
 )
+from dingdongditch.contract.observation import freeze
 from dingdongditch.contract.receipt import ExecutionReceipt
 from dingdongditch.evidence.collector import EvidenceCollector
 from dingdongditch.runtime.executor import execute_operation
@@ -71,7 +72,7 @@ class TypingSessionConfig:
             raise ValueError("completion_settle_ms must be between 0 and 5000")
 
 
-@dataclass
+@dataclass(frozen=True)
 class TypingSessionResult:
     session_id: str
     status: SessionStatus
@@ -84,6 +85,11 @@ class TypingSessionResult:
     checkpoints: list[SessionCheckpoint] = field(default_factory=list)
     receipts: list[Any] = field(default_factory=list)
     completion_evidence: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "checkpoints", freeze(self.checkpoints))
+        object.__setattr__(self, "receipts", freeze(self.receipts))
+        object.__setattr__(self, "completion_evidence", freeze(self.completion_evidence))
 
     @property
     def duration_ms(self) -> int:
@@ -106,7 +112,7 @@ class TypingSessionResult:
         }
 
 
-@dataclass
+@dataclass(frozen=True)
 class TypingKeyReceipt:
     operation_id: str
     key: str
@@ -119,6 +125,10 @@ class TypingKeyReceipt:
     recovery_attempts: list[dict[str, Any]]
     browser_session_id: str | None
     page_id: str | None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "evidence", freeze(self.evidence))
+        object.__setattr__(self, "recovery_attempts", freeze(self.recovery_attempts))
 
     def to_dict(self) -> dict[str, Any]:
         return dict(self.__dict__)

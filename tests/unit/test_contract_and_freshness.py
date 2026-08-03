@@ -22,6 +22,18 @@ def test_role_name_locator_requires_role_and_name():
         Locator(strategy=LocatorStrategy.ROLE_NAME, value="x").validate()
 
 
+def test_placeholder_locator_requires_value_and_forbids_role_name():
+    Locator(strategy=LocatorStrategy.PLACEHOLDER, value="Ask anything").validate()
+    with pytest.raises(ValueError, match="placeholder locator requires value"):
+        Locator(strategy=LocatorStrategy.PLACEHOLDER).validate()
+    with pytest.raises(ValueError, match="must not include role/name"):
+        Locator(
+            strategy=LocatorStrategy.PLACEHOLDER,
+            value="Ask anything",
+            role="textbox",
+        ).validate()
+
+
 def test_freshness_marks_pre_action_signals_stale():
     policy = FreshnessPolicy(max_age_ms=5000)
     signals = [

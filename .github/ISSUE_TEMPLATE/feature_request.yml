@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose a focused enhancement within the project scope
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete host or runtime problem needs to be solved?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful change and its public behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Can the host or Playwright already solve this appropriately?
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Architecture fit
+      description: >-
+        Explain how this preserves the plan-consuming runtime boundary and the
+        documented engineering principles and non-goals.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: This request does not ask DingDongDitch to infer user intent.
+          required: true

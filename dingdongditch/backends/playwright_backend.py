@@ -321,6 +321,9 @@ class PlaywrightBackend:
         self._ownership_scope: str | None = None
         self._profile_lease: FileLease | None = None
         self._generation = 0
+        self.observation_store_root = Path(
+            self.trusted_download_config.artifact_root
+        ) / "observations"
 
     def _prepare_new_generation(self) -> None:
         """Remove all state owned by a previous terminal browser generation."""
@@ -469,6 +472,26 @@ class PlaywrightBackend:
             if observer is None:
                 observer = self._page_observer = PageObserver(self)
             return observer.validate_reference(reference)
+
+    def attest_observation_locators(self, observation_id: str) -> Any:
+        """Collect locator attestations under an independent backend lease."""
+        with self.exclusive_use("locator_attestation"):
+            from dingdongditch.page_observer import PageObserver
+
+            observer = getattr(self, "_page_observer", None)
+            if observer is None:
+                observer = self._page_observer = PageObserver(self)
+            return observer.attest_observation_locators(observation_id)
+
+    def observation_evidence_view(self, observation_id: str, **kwargs: Any) -> Any:
+        """Compose immutable observation and attestation evidence."""
+        with self.exclusive_use("observation_evidence_view"):
+            from dingdongditch.page_observer import PageObserver
+
+            observer = getattr(self, "_page_observer", None)
+            if observer is None:
+                observer = self._page_observer = PageObserver(self)
+            return observer.evidence_view(observation_id, **kwargs)
 
     def start(self) -> None:
         with self.exclusive_use("backend_start"):
@@ -746,20 +769,48 @@ class PlaywrightBackend:
     def capture_screenshot(self, *, plan_id: str, step_id: str, operation_id: str, reason: str, config: Any) -> dict[str, Any]:
         """Capture one deterministic evidence artifact; errors are returned, never raised."""
         started = monotonic_ms()
+        path: Path | None = None
+        temporary: Path | None = None
+        redaction_requested = bool(config.redact_password_inputs or config.sensitive_selectors)
+        redaction_status = "not_requested"
+        redaction_selectors: list[str] = []
+        redaction_match_count = 0
         try:
             root = Path(config.artifact_root)
             root.mkdir(parents=True, exist_ok=True)
             safe = lambda value: "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in str(value))
             path = root / f"{safe(plan_id)}__{safe(step_id)}__{safe(operation_id)}__{safe(reason)}__{self.page_id}.png"
             temporary = root / f".{path.name}.{uuid.uuid4().hex}.tmp"
+            masks: list[Any] = []
+            if config.redact_password_inputs:
+                redaction_selectors.append('input[type="password"]')
+            redaction_selectors.extend(config.sensitive_selectors)
+            for selector in redaction_selectors:
+                for frame in list(self.page.frames):
+                    locator = frame.locator(selector)
+                    # Resolve now so malformed selectors, detached frames, or
+                    # page failures are known before any image is written.
+                    # Playwright resolves the same locator again while applying
+                    # masks to the screenshot.
+                    redaction_match_count += locator.count()
+                    masks.append(locator)
+            if redaction_requested:
+                redaction_status = "applied"
             try:
-                self.page.screenshot(path=str(temporary), full_page=bool(config.full_page), timeout=int(config.capture_timeout_ms))
+                self.page.screenshot(
+                    path=str(temporary),
+                    full_page=bool(config.full_page),
+                    timeout=int(config.capture_timeout_ms),
+                    mask=masks,
+                )
                 commit_file(temporary, path)
             finally:
                 temporary.unlink(missing_ok=True)
-            return {"captured": True, "plan_id": plan_id, "step_id": step_id, "operation_id": operation_id, "page_id": self.page_id, "reason": reason, "url": self.page.url, "timestamp_ms": monotonic_ms(), "full_page": bool(config.full_page), "artifact_path": path.as_posix(), "capture_duration_ms": max(0, monotonic_ms() - started), "redaction_status": "not_applied", "capture_error": None}
+            return {"captured": True, "plan_id": plan_id, "step_id": step_id, "operation_id": operation_id, "page_id": self.page_id, "reason": reason, "url": self.page.url, "timestamp_ms": monotonic_ms(), "full_page": bool(config.full_page), "artifact_path": path.as_posix(), "capture_duration_ms": max(0, monotonic_ms() - started), "redaction_status": redaction_status, "redaction_requested": redaction_requested, "redaction_selectors": redaction_selectors, "redaction_match_count": redaction_match_count, "capture_error": None}
         except Exception as exc:
-            return {"captured": False, "plan_id": plan_id, "step_id": step_id, "operation_id": operation_id, "page_id": self.page_id, "reason": reason, "timestamp_ms": monotonic_ms(), "full_page": bool(getattr(config, "full_page", False)), "artifact_path": None, "capture_duration_ms": max(0, monotonic_ms() - started), "redaction_status": "failed", "capture_error": f"{type(exc).__name__}: {exc}"}
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            return {"captured": False, "plan_id": plan_id, "step_id": step_id, "operation_id": operation_id, "page_id": self.page_id, "reason": reason, "timestamp_ms": monotonic_ms(), "full_page": bool(getattr(config, "full_page", False)), "artifact_path": None, "capture_duration_ms": max(0, monotonic_ms() - started), "redaction_status": "failed" if redaction_requested else "not_requested", "redaction_requested": redaction_requested, "redaction_selectors": redaction_selectors, "redaction_match_count": redaction_match_count, "capture_error": f"{type(exc).__name__}: {exc}"}
 
     def inspect_page(self, page_id: str) -> dict[str, Any] | None:
         entry = self._pages.get(page_id)
@@ -2124,10 +2175,21 @@ class PlaywrightBackend:
                 and identity.playwright_locator is not None
                 and action.type != ActionType.SCROLL_TO_TARGET
             ):
-                identity.playwright_locator.scroll_into_view_if_needed(
-                    timeout=effective_timeout_ms
-                )
-                preparation["scroll_into_view"] = "completed"
+                already_in_viewport = bool(identity.playwright_locator.evaluate(
+                    """el => {
+                        const r = el.getBoundingClientRect();
+                        return el.isConnected && r.width > 0 && r.height > 0 &&
+                          r.bottom > 0 && r.right > 0 &&
+                          r.top < window.innerHeight && r.left < window.innerWidth;
+                    }"""
+                ))
+                if already_in_viewport:
+                    preparation["scroll_into_view"] = "not_needed"
+                else:
+                    identity.playwright_locator.scroll_into_view_if_needed(
+                        timeout=effective_timeout_ms
+                    )
+                    preparation["scroll_into_view"] = "completed"
                 identity.trace.stages.append(
                     ResolutionStage(
                         stage="preparation",
@@ -3151,7 +3213,26 @@ class PlaywrightBackend:
             )
             raise AtomicSnapshotUnsupported(str(reason))
         if raw.get("connected") is not True:
-            raise PlaywrightError("element detached during atomic snapshot")
+            self._atomic_snapshot_count += 1
+            return ElementStateSnapshot(
+                availability=SnapshotAvailability.UNAVAILABLE,
+                match_count=1,
+                exists=True,
+                visible=None,
+                enabled=None,
+                in_viewport=None,
+                checked=None,
+                selected=None,
+                focused=None,
+                text=None,
+                value=None,
+                role=None,
+                bounding_box=None,
+                attributes={},
+                target_resolution=target_resolution,
+                collection_mode="atomic",
+                error="element detached during atomic snapshot",
+            )
         self._atomic_snapshot_count += 1
         box = raw.get("bounding_box")
         return ElementStateSnapshot(

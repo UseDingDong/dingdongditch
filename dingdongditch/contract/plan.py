@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 from enum import Enum
 from typing import Any
 
 from dingdongditch.contract.browser import BrowserConfig, default_browser_config
 from dingdongditch.contract.capabilities import RUNTIME_LIMITATIONS
 from dingdongditch.contract.operation import Operation
-from dingdongditch.contract.receipt import ExecutionReceipt
+from dingdongditch.contract.receipt import ExecutionReceipt, _deep_freeze_receipt
 from dingdongditch.contract.runtime import (
     MAX_PLAN_TIMEOUT_MS_CEILING,
     MIN_PLAN_TIMEOUT_MS,
@@ -186,7 +186,7 @@ class ExecutionPlan:
         return data
 
 
-@dataclass
+@dataclass(frozen=True)
 class PlanStepRecord:
     step_index: int
     operation_id: str
@@ -254,6 +254,24 @@ class PlanReceipt:
     plan_timing: dict[str, Any] | None = None
     lifecycle: dict[str, Any] | None = None
     telemetry: list[dict[str, Any]] = field(default_factory=list)
+    _sealed: bool = False
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if getattr(self, "_sealed", False) and name != "_sealed":
+            raise TypeError("published runtime receipt is immutable")
+        object.__setattr__(self, name, value)
+
+    def seal(self) -> "PlanReceipt":
+        if self._sealed:
+            return self
+        for item in self.steps:
+            if item.receipt is not None:
+                item.receipt.seal()
+        for item in dataclass_fields(self):
+            if item.name != "_sealed":
+                object.__setattr__(self, item.name, _deep_freeze_receipt(getattr(self, item.name)))
+        object.__setattr__(self, "_sealed", True)
+        return self
 
     @property
     def duration_ms(self) -> int:

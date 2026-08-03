@@ -345,6 +345,8 @@ def _execute_plan(
                     "terminal_session_identity": backend.terminal_session_identity,
                 }
                 final_receipt.telemetry = list(backend.telemetry)
+        if final_receipt is not None:
+            final_receipt.seal()
 
 
 def execute_plan(

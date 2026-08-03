@@ -605,14 +605,53 @@ class WindowsDesktopBackend:
         reason: str,
         config: ScreenshotConfig,
     ) -> dict[str, Any]:
-        from PIL import ImageGrab
+        config.validate()
+        regions = config.desktop_redaction_regions
+        if config.mandatory_redaction and not regions:
+            raise DesktopBackendError(
+                "mandatory desktop screenshot redaction requires at least one "
+                "caller-declared desktop redaction region",
+                failure_kind="screenshot_redaction_failed",
+            )
+        from PIL import ImageDraw, ImageGrab
+
+        image = ImageGrab.grab(all_screens=True)
+        for region in regions:
+            if (
+                region.x + region.width > image.width
+                or region.y + region.height > image.height
+            ):
+                raise DesktopBackendError(
+                    f"desktop redaction region {region.region_id!r} is outside "
+                    f"the captured {image.width}x{image.height} image",
+                    failure_kind="screenshot_redaction_failed",
+                )
+
+        if regions:
+            try:
+                image = image.convert("RGB")
+                draw = ImageDraw.Draw(image)
+                for region in regions:
+                    draw.rectangle(
+                        (
+                            region.x,
+                            region.y,
+                            region.x + region.width - 1,
+                            region.y + region.height - 1,
+                        ),
+                        fill=(0, 0, 0),
+                    )
+            except Exception as exc:
+                raise DesktopBackendError(
+                    f"desktop screenshot redaction could not be applied: {exc}",
+                    failure_kind="screenshot_redaction_failed",
+                ) from exc
 
         root = Path(config.artifact_root)
         root.mkdir(parents=True, exist_ok=True)
         name = f"{plan_id}__{operation_id}__{reason}__{self.session_id}.png"
         path = root / name
         temporary = root / f".{name}.{uuid.uuid4().hex}.tmp"
-        image = ImageGrab.grab(all_screens=True)
         try:
             image.save(temporary, "PNG")
             commit_file(temporary, path)
@@ -624,6 +663,12 @@ class WindowsDesktopBackend:
             "width": image.width,
             "height": image.height,
             "captured_at_ms": monotonic_ms(),
+            "redaction_status": "applied" if regions else "not_requested",
+            "redaction_method": (
+                "caller_declared_solid_pixel_regions" if regions else None
+            ),
+            "redaction_color": "#000000" if regions else None,
+            "redacted_regions": [region.describe() for region in regions],
         }
 
     def _pid_exists(self, pid: int) -> bool:

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from typing import Any
 
 from dingdongditch.contract.verdict import Verdict
+from dingdongditch.contract.observation import freeze
 from dingdongditch.evidence.models import (
     ExpectationResult,
     EvidenceSignal,
@@ -13,6 +14,18 @@ from dingdongditch.evidence.models import (
 )
 
 RECEIPT_SCHEMA_VERSION = "1.7.0"
+
+
+def _deep_freeze_receipt(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        for item in fields(value):
+            object.__setattr__(value, item.name, _deep_freeze_receipt(getattr(value, item.name)))
+        return value
+    if isinstance(value, dict):
+        return freeze({key: _deep_freeze_receipt(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return freeze([_deep_freeze_receipt(item) for item in value])
+    return value
 
 
 @dataclass
@@ -52,6 +65,21 @@ class ExecutionReceipt:
     telemetry: list[dict[str, Any]] | None = None
     cleanup: dict[str, Any] | None = None
     page_transition: dict[str, Any] | None = None
+    _sealed: bool = False
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if getattr(self, "_sealed", False) and name != "_sealed":
+            raise TypeError("published runtime receipt is immutable")
+        object.__setattr__(self, name, value)
+
+    def seal(self) -> "ExecutionReceipt":
+        if self._sealed:
+            return self
+        for item in fields(self):
+            if item.name != "_sealed":
+                object.__setattr__(self, item.name, _deep_freeze_receipt(getattr(self, item.name)))
+        object.__setattr__(self, "_sealed", True)
+        return self
 
     def to_dict(self) -> dict[str, Any]:
         return {

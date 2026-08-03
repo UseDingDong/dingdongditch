@@ -1,13 +1,96 @@
+# Python bytecode and tool caches
 __pycache__/
 *.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Packaging and build output
 *.egg-info/
 .eggs/
-dist/
 build/
-.pytest_cache/
+dist/
+wheelhouse/
+pip-wheel-metadata/
+
+# Virtual environments
 .venv/
 venv/
+env/
+ENV/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Editors and operating-system metadata
+.idea/
+.vscode/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Local agent and assistant state
+.agents/
+.codex/
+
+# Logs, process state, and browser traces
+*.log
+*.pid
+*.tmp
+*.temp
+*.bak
+*.har
+*.trace
+*.publication.lock
+*.ddd-profile.lock
+.ddd-session.json
 playwright-report/
 test-results/
-artifacts/live_demos/*.json
-artifacts/live_tests/
+blob-report/
+
+# Browser profiles and session state
+.auth/
+auth-state/
+browser-data/
+browser-profile/
+browser-profiles/
+chrome-profile/
+playwright/.auth/
+storage-state*.json
+cookies*.json
+
+# Runtime output and local evidence
+artifacts/
+experiments/
+Engineering/experiments/
+downloads/
+logs/
+recordings/
+receipts/
+screenshots/
+traces/
+runtime-journals/
+
+# Generated benchmark measurements (keep harnesses and written analysis)
+Engineering/runtime_latency_audit/benchmark_results*.json

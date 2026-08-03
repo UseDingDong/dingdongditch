@@ -45,7 +45,9 @@ def atomic_replace(source: Path, destination: Path) -> None:
 def commit_file(source: Path, destination: Path) -> None:
     """Fsync and atomically publish a complete same-filesystem file."""
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with source.open("rb") as handle:
+    # Windows requires a writable descriptor for fsync/FlushFileBuffers.
+    # The file contents are not changed here.
+    with source.open("r+b") as handle:
         os.fsync(handle.fileno())
     atomic_replace(source, destination)
 

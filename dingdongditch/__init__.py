@@ -16,7 +16,11 @@ from dingdongditch.contract.browser import (
 )
 from dingdongditch.contract.expectation import Expectation, ExpectationType
 from dingdongditch.contract.dialog import DialogAction, DialogContract, DialogRequirement, DialogType
-from dingdongditch.contract.screenshot import ScreenshotConfig, ScreenshotPolicy
+from dingdongditch.contract.screenshot import (
+    DesktopRedactionRegion,
+    ScreenshotConfig,
+    ScreenshotPolicy,
+)
 from dingdongditch.contract.operation import (
     Action,
     ActionType,
@@ -77,12 +81,42 @@ from dingdongditch.contract.download import (
 )
 from dingdongditch.contract.pointer import PointerMoveRequest, PointerOrigin
 from dingdongditch.contract.observation import (
+    CandidateEvidenceLevel,
+    LocatorAttestation,
+    LocatorAttestationStatus,
+    ObservationCommit,
+    ObservationEvidenceView,
     ObservationFreshnessResult,
     ObservationReference,
+    ObservationTransactionEvidence,
+    ObservationTransactionState,
     PageObservation,
     PageObservationOptions,
+    SnapshotCore,
+)
+from dingdongditch.contract.application_lifecycle import (
+    ApplicationLifecycleEvidence,
+    ApplicationLifecycleState,
+)
+from dingdongditch.runtime.application_lifecycle import (
+    ApplicationLifecycleAdapter,
+    ChatGPTApplicationLifecycleAdapter,
+    GeminiApplicationLifecycleAdapter,
+    UnknownApplicationLifecycleAdapter,
+    select_application_lifecycle_adapter,
 )
 from dingdongditch.page_observer import PageObserver
+from dingdongditch.continuity import (
+    BrowserBinding,
+    CommandRecord,
+    CommandState,
+    ContinuityError,
+    ContinuitySession,
+    SessionHeader,
+    SessionLifecycle,
+    TerminalClassification,
+    TransportKind,
+)
 
 __all__ = [
     "__version__",
@@ -112,6 +146,7 @@ __all__ = [
     "DialogContract",
     "ScreenshotPolicy",
     "ScreenshotConfig",
+    "DesktopRedactionRegion",
     "Verdict",
     "ExecutionReceipt",
     "execute_operation",
@@ -169,5 +204,29 @@ __all__ = [
     "PageObservationOptions",
     "ObservationReference",
     "ObservationFreshnessResult",
+    "SnapshotCore",
+    "ObservationCommit",
+    "ObservationTransactionEvidence",
+    "ObservationTransactionState",
+    "CandidateEvidenceLevel",
+    "LocatorAttestation",
+    "LocatorAttestationStatus",
+    "ObservationEvidenceView",
     "PageObserver",
+    "ContinuitySession",
+    "ContinuityError",
+    "SessionHeader",
+    "SessionLifecycle",
+    "CommandRecord",
+    "CommandState",
+    "BrowserBinding",
+    "TransportKind",
+    "TerminalClassification",
+    "ApplicationLifecycleState",
+    "ApplicationLifecycleEvidence",
+    "ApplicationLifecycleAdapter",
+    "ChatGPTApplicationLifecycleAdapter",
+    "GeminiApplicationLifecycleAdapter",
+    "UnknownApplicationLifecycleAdapter",
+    "select_application_lifecycle_adapter",
 ]

@@ -33,7 +33,6 @@ def inspect_target(
         "ambiguous": state.get("ambiguous", False),
         "visible": state.get("visible"),
         "enabled": state.get("enabled"),
-        "focused": state.get("focused"),
         "text": state.get("text"),
         "target_resolution": state.get("target_resolution"),
     }

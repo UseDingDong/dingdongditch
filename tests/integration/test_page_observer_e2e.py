@@ -4,13 +4,14 @@ import pytest
 
 from dingdongditch import (
     BrowserConfig,
+    BrowserEngine,
     Locator,
     LocatorStrategy,
     ObservationReference,
     PageObservationOptions,
 )
 from dingdongditch.backends.playwright_backend import PlaywrightBackend
-from dingdongditch.page_observer import ObservationUnstableError, PageObserver
+from dingdongditch.page_observer import PageObserver
 
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "page_observation_app.html"
@@ -56,6 +57,41 @@ def test_precise_page_observation_contract():
         backend.stop()
 
 
+def test_unique_placeholder_candidate_is_directly_executable():
+    backend = PlaywrightBackend(BrowserConfig(headless=True))
+    try:
+        backend.start()
+        backend.page.set_content('<textarea placeholder="Ask anything"></textarea>')
+        observation = backend.observe_page()
+        prompt = next(
+            e for e in observation.interactive_elements
+            if e["placeholder"] == "Ask anything"
+        )
+        candidate = next(
+            c for c in prompt["locator_candidates"]
+            if c["locator_type"] == "placeholder"
+        )
+        assert candidate["unique"] is True
+        assert backend.count_matches(
+            Locator(
+                strategy=LocatorStrategy.PLACEHOLDER,
+                value="Ask anything",
+            )
+        ) == 1
+        freshness = backend.validate_observation_reference(
+            ObservationReference(
+                observation.observation_id,
+                prompt["element_id"],
+                {"visible": True, "enabled": True},
+            )
+        )
+        assert freshness.fresh is True
+        assert freshness.commit_id == observation.commit_id
+        assert freshness.observation_hash == observation.observation_hash
+    finally:
+        backend.stop()
+
+
 def test_truncation_and_dynamic_staleness():
     backend = PlaywrightBackend(BrowserConfig(headless=True))
     try:
@@ -85,7 +121,7 @@ def test_truncation_and_dynamic_staleness():
             )
         )
         assert unrelated_change.fresh is True
-        assert unrelated_change.reason == "re_resolved_with_unrelated_dom_change"
+        assert unrelated_change.reason == "same_node_with_unrelated_dom_change"
         backend.page.evaluate("document.querySelector('[data-testid=time]').remove()")
         result = backend.validate_observation_reference(
             ObservationReference(observation.observation_id, target["element_id"])
@@ -96,75 +132,140 @@ def test_truncation_and_dynamic_staleness():
         backend.stop()
 
 
-def test_transient_browser_mutations_restart_complete_observation(monkeypatch):
+@pytest.mark.parametrize(
+    "engine",
+    [BrowserEngine.CHROMIUM, BrowserEngine.FIREFOX, BrowserEngine.WEBKIT],
+)
+def test_replaced_equivalent_element_is_not_fresh(engine):
+    backend = PlaywrightBackend(BrowserConfig(headless=True, engine=engine))
+    try:
+        backend.start()
+        backend.page.set_content(
+            '<button data-testid="stable" aria-label="Continue">Continue</button>'
+        )
+        observation = backend.observe_page()
+        target = observation.interactive_elements[0]
+        backend.page.evaluate("""() => {
+            const old = document.querySelector('[data-testid=stable]');
+            const replacement = old.cloneNode(true);
+            old.replaceWith(replacement);
+        }""")
+        result = backend.validate_observation_reference(
+            ObservationReference(observation.observation_id, target["element_id"])
+        )
+        assert result.fresh is False
+        assert result.reason == "element_replaced"
+    finally:
+        backend.stop()
+
+
+def test_observation_waits_for_quiescence_and_publishes_timing_evidence():
+    backend = PlaywrightBackend(BrowserConfig(headless=True))
+    try:
+        backend.start()
+        backend.page.set_content('<button>Stable</button>')
+        started = __import__("time").monotonic()
+        observation = backend.observe_page(
+            PageObservationOptions(
+                mutation_quiescence_ms=75,
+                observation_budget_ms=2_000,
+            )
+        )
+        elapsed_ms = (__import__("time").monotonic() - started) * 1_000
+        assert elapsed_ms >= 60
+        assert observation.diagnostics["timing"] == {
+            "observation_budget_ms": 2_000,
+            "mutation_quiescence_ms": 75,
+            "quiescence_enforced": True,
+            "budget_enforced_before_publication": True,
+        }
+    finally:
+        backend.stop()
+
+
+def test_continuous_mutation_exhausts_budget_without_commit():
+    backend = PlaywrightBackend(BrowserConfig(headless=True))
+    try:
+        backend.start()
+        backend.page.set_content('<button>Busy</button>')
+        backend.page.evaluate("""() => {
+            window.__mutationTimer = setInterval(() => {
+                document.body.dataset.tick = String(Date.now());
+            }, 10);
+        }""")
+        with pytest.raises(Exception, match="observation_budget_exceeded"):
+            backend.observe_page(
+                PageObservationOptions(
+                    mutation_quiescence_ms=80,
+                    observation_budget_ms=200,
+                )
+            )
+        observer = backend._page_observer
+        assert observer._observations == {}
+        assert observer._commits == {}
+        transaction = next(iter(observer._transactions.values()))
+        assert transaction.state.value == "aborted"
+    finally:
+        if backend.is_started:
+            backend.page.evaluate("clearInterval(window.__mutationTimer)")
+        backend.stop()
+
+
+def test_v2_observation_commit_does_not_run_locator_attestation(monkeypatch):
     backend = PlaywrightBackend(BrowserConfig(headless=True))
     try:
         backend.start()
         backend.page.goto(FIXTURE.resolve().as_uri())
         observer = PageObserver(backend)
-        original = observer._verify_locator_candidates
-        original_capture = observer._capture_once
-        remaining = {"count": 2}
-        attempt = {"inject": False, "injected": False}
-
-        def mutate_after_attestation(candidates):
-            original(candidates)
-            if attempt["inject"] and not attempt["injected"]:
-                attempt["injected"] = True
-                backend.page.evaluate(
-                    "document.body.appendChild(document.createElement('i'))"
-                )
-
-        def capture(options):
-            attempt["inject"] = remaining["count"] > 0
-            attempt["injected"] = False
-            if attempt["inject"]:
-                remaining["count"] -= 1
-            return original_capture(options)
-
         monkeypatch.setattr(
-            observer, "_verify_locator_candidates", mutate_after_attestation
+            observer, "_verify_locator_candidates",
+            lambda candidates: (_ for _ in ()).throw(
+                AssertionError("attestation entered observation transaction")
+            ),
         )
-        monkeypatch.setattr(observer, "_capture_once", capture)
-        observation = observer.observe_page(PageObservationOptions(
-            observation_budget_ms=5_000,
-            mutation_quiescence_ms=25,
-        ))
-        assert observation.diagnostics["transaction"]["attempts"] == 3
-        assert len(
-            observation.diagnostics["transaction"]["discarded_attempts"]
-        ) == 2
+        observation = observer.observe_page()
+        assert observation.diagnostics["transaction"]["state"] == "committed"
+        assert observation.diagnostics["transaction"]["locator_attestation_boundary"] == "independent"
         assert len(observer._observations) == 1
     finally:
         backend.stop()
 
 
-def test_continuous_browser_dom_churn_fails_safely():
+def test_v2_independent_attestation_and_evidence_view():
     backend = PlaywrightBackend(BrowserConfig(headless=True))
     try:
         backend.start()
         backend.page.goto(FIXTURE.resolve().as_uri())
-        backend.page.evaluate(
-            """() => {
-              const node=document.createElement('i');
-              document.body.appendChild(node);
-              window.__observationChurn=setInterval(() => {
-                node.textContent=String(Number(node.textContent || '0') + 1);
-              }, 5);
-            }"""
+        observation = backend.observe_page()
+        before = observation.to_dict()
+        attestations = backend.attest_observation_locators(
+            observation.observation_id
         )
-        observer = PageObserver(backend)
-        with pytest.raises(ObservationUnstableError) as caught:
-            observer.observe_page(PageObservationOptions(
-                observation_budget_ms=750,
-                mutation_quiescence_ms=50,
-            ))
-        assert caught.value.evidence["reason"] in {
-            "dom_never_reached_quiescence",
-            "observation_budget_exhausted",
-        }
-        assert observer._observations == {}
+        view = backend.observation_evidence_view(observation.observation_id)
+        assert attestations
+        assert view.attestations == attestations
+        assert view.commit.observation_hash == observation.observation_hash
+        assert observation.to_dict() == before
+        assert any(record.unique for record in attestations)
+        assert any(not record.unique for record in attestations)
     finally:
-        if backend.is_started:
-            backend.page.evaluate("clearInterval(window.__observationChurn)")
+        backend.stop()
+
+
+def test_within_region_attestation_is_browser_scoped_to_owning_region():
+    backend = PlaywrightBackend(BrowserConfig(headless=True))
+    try:
+        backend.start()
+        backend.page.set_content("""
+            <main aria-label="First"><button>Go</button></main>
+            <section aria-label="Second"><button>Go</button></section>
+        """)
+        observation = backend.observe_page()
+        records = backend.attest_observation_locators(observation.observation_id)
+        global_role = [item for item in records if item.locator_type == "role_name"]
+        scoped_role = [item for item in records if item.locator_type == "within_region"]
+        assert global_role and all(item.match_count == 2 for item in global_role)
+        assert scoped_role and all(item.match_count == 1 for item in scoped_role)
+        assert all(item.unique for item in scoped_role)
+    finally:
         backend.stop()

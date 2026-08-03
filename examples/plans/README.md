@@ -23,7 +23,7 @@ python -m dingdongditch run-plan examples/plans/iframe_targeting.json
 python -m dingdongditch run-plan - < examples/plans/basic_navigation.json
 python -m dingdongditch run-plan examples/plans/basic_navigation.json --engine firefox
 python -m dingdongditch run-plan examples/plans/basic_navigation.json --engine webkit --headed
-python -m dingdongditch run-plan examples/plans/basic_navigation.json --output receipt.json
+python -m dingdongditch run-plan examples/plans/basic_navigation.json --output artifacts/receipt.json
 ```
 
 ## Author another plan

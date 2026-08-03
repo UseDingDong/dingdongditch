@@ -8,13 +8,27 @@ import math
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from dingdongditch.contract.observation import (
+    CandidateEvidenceLevel,
+    LocatorAttestation,
+    LocatorAttestationStatus,
+    ObservationCommit,
+    ObservationEvidenceView,
     ObservationFreshnessResult,
     ObservationReference,
+    ObservationTransactionEvidence,
+    ObservationTransactionState,
     PageObservation,
     PageObservationOptions,
+    SnapshotCore,
+)
+from dingdongditch.runtime.publication import (
+    PublicationUnavailableError,
+    publish_json,
+    read_published_json,
 )
 
 
@@ -25,6 +39,22 @@ _SNAPSHOT_JS = r"""
     new MutationObserver(()=>window.__dddObservationEpoch.value++)
       .observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
   }
+  if (!window.__dddObservationDocumentId) {
+    window.__dddObservationDocumentId =
+      (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() :
+      `${Date.now()}-${Math.random()}`;
+    window.__dddObservationNodeTokens = new WeakMap();
+    window.__dddObservationNodeCounter = 0;
+  }
+  const nodeToken = e => {
+    if (!window.__dddObservationNodeTokens.has(e)) {
+      window.__dddObservationNodeTokens.set(
+        e,
+        `${window.__dddObservationDocumentId}:${++window.__dddObservationNodeCounter}`
+      );
+    }
+    return window.__dddObservationNodeTokens.get(e);
+  };
   const vw = window.innerWidth, vh = window.innerHeight, dpr = window.devicePixelRatio || 1;
   const roleMap = {A:'link',BUTTON:'button',TEXTAREA:'textbox',SELECT:'combobox',
     OPTION:'option',SUMMARY:'button'};
@@ -100,7 +130,7 @@ _SNAPSHOT_JS = r"""
     for(const a of ['id','name','data-testid','data-test','data-qa','aria-controls','aria-describedby','aria-current','data-state','autocomplete','class'])
       if(e.getAttribute(a)!==null) attrs[a]=e.getAttribute(a);
     const selection=selectedState(e);
-    return {_node:e,element_id:`el_${i+1}`,dom_tag:e.tagName.toLowerCase(),semantic_role:rr,
+    return {_node:e,element_id:`el_${i+1}`,node_continuity_token:nodeToken(e),dom_tag:e.tagName.toLowerCase(),semantic_role:rr,
       accessible_name:name(e).slice(0,limits.maxTextLength)||null,visible_text:t||null,
       input_type:e.tagName==='INPUT'?(e.type||'text'):null,href:e.href||null,
       placeholder:e.getAttribute('placeholder'),current_value:sensitive?'[REDACTED]':
@@ -182,65 +212,6 @@ _SNAPSHOT_JS = r"""
 }
 """
 
-_SIGNATURE_JS = r"""() => {
-  const root=document.documentElement;
-  return [location.href,document.title,root.childElementCount,
-    document.querySelectorAll('*').length,root.scrollWidth,root.scrollHeight,
-    window.__dddObservationEpoch ? window.__dddObservationEpoch.value : -1].join('|');
-}"""
-
-_WAIT_FOR_DOM_QUIESCENCE_JS = r"""
-({quietMs, budgetMs}) => new Promise(resolve => {
-  let mutations = 0;
-  let settled = false;
-  let quietTimer = null;
-  const finish = stable => {
-    if (settled) return;
-    settled = true;
-    observer.disconnect();
-    if (quietTimer !== null) clearTimeout(quietTimer);
-    clearTimeout(budgetTimer);
-    resolve({
-      stable,
-      mutations,
-      mutation_epoch: window.__dddObservationEpoch
-        ? window.__dddObservationEpoch.value : null
-    });
-  };
-  const armQuietWindow = () => {
-    if (quietTimer !== null) clearTimeout(quietTimer);
-    quietTimer = setTimeout(() => finish(true), quietMs);
-  };
-  const observer = new MutationObserver(records => {
-    mutations += records.length;
-    armQuietWindow();
-  });
-  observer.observe(document, {
-    subtree: true,
-    childList: true,
-    attributes: true,
-    characterData: true
-  });
-  const budgetTimer = setTimeout(() => finish(false), budgetMs);
-  armQuietWindow();
-})
-"""
-
-
-class _ObservationMutated(RuntimeError):
-    def __init__(self, before: str, after: str) -> None:
-        super().__init__("DOM mutated during observation capture")
-        self.before = before
-        self.after = after
-
-
-class ObservationUnstableError(RuntimeError):
-    def __init__(self, evidence: dict[str, Any]) -> None:
-        super().__init__(
-            "page changed while observation locator attestations were collected"
-        )
-        self.evidence = evidence
-
 _VALIDATE_REFERENCE_JS = r"""
 (identity) => {
   const roleMap={A:'link',BUTTON:'button',TEXTAREA:'textbox',SELECT:'combobox',
@@ -261,9 +232,15 @@ _VALIDATE_REFERENCE_JS = r"""
     s.visibility!=='hidden'&&Number(s.opacity)!==0&&r.width>0&&r.height>0&&
     r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth};
   const nodes=[...document.querySelectorAll('button,a[href],input,textarea,select,option,summary,[contenteditable=""],[contenteditable="true"],[role],[tabindex]')];
-  const matches=nodes.filter(e=>e.tagName.toLowerCase()===identity.dom_tag&&role(e)===identity.semantic_role&&name(e)===identity.accessible_name);
+  const matches=nodes.filter(e=>e.tagName.toLowerCase()===identity.dom_tag&&
+    role(e)===identity.semantic_role&&
+    (identity.accessible_name===null||name(e)===identity.accessible_name)&&
+    (identity.placeholder===null||e.getAttribute('placeholder')===identity.placeholder));
   const root=document.documentElement,body=document.body;
-  return {match_count:matches.length,visible:matches.length===1?visible(matches[0]):null,
+  const matchedToken = matches.length===1 && window.__dddObservationNodeTokens
+    ? window.__dddObservationNodeTokens.get(matches[0]) || null : null;
+  return {match_count:matches.length,node_continuity_token:matchedToken,
+    visible:matches.length===1?visible(matches[0]):null,
     enabled:matches.length===1?!(matches[0].disabled||matches[0].getAttribute('aria-disabled')==='true'):null,
     selected:matches.length===1?(('selected'in matches[0])?!!matches[0].selected:
       (matches[0].hasAttribute('aria-selected')?matches[0].getAttribute('aria-selected')==='true':null)):null,
@@ -274,69 +251,193 @@ _VALIDATE_REFERENCE_JS = r"""
 }
 """
 
+_WAIT_FOR_MUTATION_QUIESCENCE_JS = r"""
+({quietMs, budgetMs}) => new Promise((resolve, reject) => {
+  let quietTimer;
+  let budgetTimer;
+  let observer;
+  const cleanup = () => {
+    if (quietTimer) clearTimeout(quietTimer);
+    if (budgetTimer) clearTimeout(budgetTimer);
+    if (observer) observer.disconnect();
+  };
+  const settled = () => { cleanup(); resolve({quiescent: true}); };
+  const armQuiet = () => {
+    if (quietTimer) clearTimeout(quietTimer);
+    quietTimer = setTimeout(settled, quietMs);
+  };
+  observer = new MutationObserver(armQuiet);
+  observer.observe(document, {
+    subtree: true, childList: true, attributes: true, characterData: true
+  });
+  budgetTimer = setTimeout(() => {
+    cleanup();
+    reject(new Error('observation_budget_exceeded_before_quiescence'));
+  }, budgetMs);
+  armQuiet();
+})
+"""
+
 
 class PageObserver:
     def __init__(self, backend: Any):
         self.backend = backend
         self._observations: dict[str, PageObservation] = {}
+        self._commits: dict[str, ObservationCommit] = {}
+        self._attestations: dict[str, LocatorAttestation] = {}
+        self._transactions: dict[str, ObservationTransactionEvidence] = {}
+        store = getattr(backend, "observation_store_root", None)
+        self._store_root = Path(store) if store is not None else None
+        self._load_durable_commits()
 
     def observe_page(self, options: PageObservationOptions | None = None) -> PageObservation:
         options = options or PageObservationOptions()
         options.validate()
         if not self.backend.is_started:
             raise RuntimeError("page observation requires an active backend")
-        deadline = time.monotonic_ns() // 1_000_000 + options.observation_budget_ms
-        attempts = 0
-        discarded: list[dict[str, Any]] = []
-        while True:
-            attempts += 1
-            try:
-                observation = self._capture_once(options)
-                observation.diagnostics["transaction"] = {
-                    "attempts": attempts,
-                    "discarded_attempts": list(discarded),
-                    "observation_budget_ms": options.observation_budget_ms,
-                    "mutation_quiescence_ms": options.mutation_quiescence_ms,
-                }
-                return observation
-            except _ObservationMutated as mutation:
-                now = time.monotonic_ns() // 1_000_000
-                remaining = deadline - now
-                evidence = {
-                    "attempt": attempts,
-                    "before_fingerprint": hashlib.sha256(
-                        mutation.before.encode()
-                    ).hexdigest(),
-                    "after_fingerprint": hashlib.sha256(
-                        mutation.after.encode()
-                    ).hexdigest(),
-                    "remaining_budget_ms": max(0, remaining),
-                }
-                discarded.append(evidence)
-                if remaining <= 0:
-                    raise ObservationUnstableError({
-                        "attempts": attempts,
-                        "discarded_attempts": discarded,
-                        "reason": "observation_budget_exhausted",
-                    }) from mutation
-                quiescence = self.backend.page.evaluate(
-                    _WAIT_FOR_DOM_QUIESCENCE_JS,
-                    {
-                        "quietMs": options.mutation_quiescence_ms,
-                        "budgetMs": remaining,
-                    },
-                )
-                evidence["quiescence"] = dict(quiescence)
-                if not quiescence.get("stable"):
-                    raise ObservationUnstableError({
-                        "attempts": attempts,
-                        "discarded_attempts": discarded,
-                        "reason": "dom_never_reached_quiescence",
-                    }) from mutation
-
-    def _capture_once(self, options: PageObservationOptions) -> PageObservation:
-        options.validate()
+        transaction_id = str(uuid.uuid4())
         started = time.time_ns() // 1_000_000
+        binding = self._browser_binding()
+        states = [
+            ObservationTransactionState.REQUESTED.value,
+            ObservationTransactionState.BINDING.value,
+            ObservationTransactionState.CAPTURING.value,
+        ]
+        try:
+            observation = self._capture_once(
+                options, transaction_id=transaction_id, browser_binding=binding,
+                transaction_states=states,
+            )
+            return observation
+        except Exception as exc:
+            states.extend([
+                ObservationTransactionState.ABORTING.value,
+                ObservationTransactionState.ABORTED.value,
+            ])
+            self._transactions[transaction_id] = ObservationTransactionEvidence(
+                transaction_id=transaction_id,
+                state=ObservationTransactionState.ABORTED,
+                states=states,
+                browser_binding=binding,
+                started_at_ms=started,
+                completed_at_ms=time.time_ns() // 1_000_000,
+                failure_kind=type(exc).__name__,
+                failure_message=str(exc),
+            )
+            raise
+
+    def _browser_binding(self) -> dict[str, Any]:
+        return {
+            "backend_identity": getattr(self.backend, "backend_identity", None),
+            "browser_identity": getattr(self.backend, "browser_identity", None),
+            "browser_session_id": getattr(self.backend, "browser_session_id", None),
+            "session_identity": getattr(self.backend, "browser_session_id", None),
+            "context_id": getattr(self.backend, "context_id", None),
+            "page_id": getattr(self.backend, "page_id", None),
+            "backend_generation": getattr(self.backend, "_generation", None),
+            "binding_generation": getattr(self.backend, "_generation", None),
+        }
+
+    @staticmethod
+    def _binding_identity(binding: Any) -> tuple[Any, ...]:
+        return tuple(binding.get(key) for key in (
+            "backend_identity", "browser_identity", "session_identity",
+            "context_id", "page_id", "binding_generation",
+        ))
+
+    def _commit_path(self, commit_id: str) -> Path:
+        assert self._store_root is not None
+        return self._store_root / f"{commit_id}.json"
+
+    @staticmethod
+    def _verify_observation_hash(observation: PageObservation) -> bool:
+        values = observation.to_dict()
+        expected = values.get("observation_hash")
+        values["observation_hash"] = ""
+        payload = json.dumps(values, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode()).hexdigest() == expected
+
+    def _publish_durable_commit(
+        self, observation: PageObservation, commit: ObservationCommit
+    ) -> None:
+        if self._store_root is None:
+            return
+        publish_json(
+            self._commit_path(commit.commit_id),
+            {
+                "schema_version": "1.0.0",
+                "observation": observation.to_dict(),
+                "commit": commit.to_dict(),
+            },
+            sort_keys=True,
+        )
+
+    def _load_durable_commits(self) -> None:
+        if self._store_root is None or not self._store_root.exists():
+            return
+        for path in sorted(self._store_root.glob("*.json")):
+            try:
+                payload = read_published_json(path)
+                observation = PageObservation.from_dict(payload["observation"])
+                raw_commit = dict(payload["commit"])
+                raw_commit["state"] = ObservationTransactionState(raw_commit["state"])
+                commit = ObservationCommit(**raw_commit)
+                if (
+                    payload.get("schema_version") != "1.0.0"
+                    or path.stem != commit.commit_id
+                    or commit.observation_id != observation.observation_id
+                    or commit.commit_id != observation.commit_id
+                    or commit.observation_hash != observation.observation_hash
+                    or self._binding_identity(commit.browser_binding)
+                    != self._binding_identity(commit.evidence["snapshot_core"]["browser_binding"])
+                    or not self._verify_observation_hash(observation)
+                ):
+                    continue
+                # Durable evidence from another browser generation remains on
+                # disk, but is not admitted as live composable state.
+                if self._binding_identity(commit.browser_binding) != self._binding_identity(
+                    self._browser_binding()
+                ):
+                    continue
+            except (KeyError, TypeError, ValueError, PublicationUnavailableError):
+                continue
+            self._observations[observation.observation_id] = observation
+            self._commits[observation.observation_id] = commit
+
+    def _capture_once(
+        self,
+        options: PageObservationOptions,
+        *,
+        transaction_id: str | None = None,
+        browser_binding: dict[str, Any] | None = None,
+        transaction_states: list[str] | None = None,
+    ) -> PageObservation:
+        options.validate()
+        transaction_id = transaction_id or str(uuid.uuid4())
+        browser_binding = browser_binding or self._browser_binding()
+        states = transaction_states if transaction_states is not None else [
+            ObservationTransactionState.REQUESTED.value,
+            ObservationTransactionState.BINDING.value,
+            ObservationTransactionState.CAPTURING.value,
+        ]
+        started = time.time_ns() // 1_000_000
+        budget_started = time.monotonic_ns() // 1_000_000
+        deadline = budget_started + options.observation_budget_ms
+
+        def require_budget(phase: str) -> int:
+            remaining = deadline - (time.monotonic_ns() // 1_000_000)
+            if remaining <= 0:
+                raise TimeoutError(f"observation_budget_exceeded:{phase}")
+            return remaining
+
+        self.backend.page.evaluate(
+            _WAIT_FOR_MUTATION_QUIESCENCE_JS,
+            {
+                "quietMs": options.mutation_quiescence_ms,
+                "budgetMs": require_budget("quiescence"),
+            },
+        )
+        require_budget("capture")
         raw = self.backend.page.evaluate(_SNAPSHOT_JS, {
             "maxElements": options.max_interactive_elements,
             "maxTextBlocks": options.max_text_blocks,
@@ -344,18 +445,30 @@ class PageObserver:
             "maxScrollables": options.max_scrollable_containers,
             "maxTextLength": options.max_text_length,
         })
+        if not isinstance(raw, dict) or not isinstance(raw.get("signature"), str):
+            raise ValueError("atomic snapshot returned an invalid capture envelope")
+        require_budget("validation")
+        states.append(ObservationTransactionState.VALIDATING.value)
+        snapshot_id = str(uuid.uuid4())
+        snapshot_payload = json.dumps(raw, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        snapshot_hash = hashlib.sha256(snapshot_payload.encode()).hexdigest()
+        states.append(ObservationTransactionState.DERIVING.value)
         for element in raw["elements"]:
             element["locator_candidates"] = self._locator_candidates(element, raw["elements"], raw["regions"])
-            self._verify_locator_candidates(element["locator_candidates"])
-        final_signature = self.backend.page.evaluate(_SIGNATURE_JS)
-        if final_signature != raw["signature"]:
-            raise _ObservationMutated(raw["signature"], final_signature)
         relationships = self._relationships(raw["elements"], options)
+        require_budget("derivation")
         observation_id = str(uuid.uuid4())
+        commit_id = str(uuid.uuid4())
         captured = time.time_ns() // 1_000_000
         fingerprint = hashlib.sha256(raw["signature"].encode()).hexdigest()
         diagnostics = {
             "capture_duration_ms": captured - started,
+            "timing": {
+                "observation_budget_ms": options.observation_budget_ms,
+                "mutation_quiescence_ms": options.mutation_quiescence_ms,
+                "quiescence_enforced": True,
+                "budget_enforced_before_publication": True,
+            },
             "truncated": {
                 "interactive_elements": raw["totalElements"] > len(raw["elements"]),
                 "regions": raw["totalRegions"] > len(raw["regions"]),
@@ -365,6 +478,17 @@ class PageObserver:
             },
             "counts_before_limits": {"interactive_elements": raw["totalElements"], "regions": raw["totalRegions"]},
             "evidence_sources": ["DOM", "ARIA", "accessible-name rules", "computed visibility", "bounding geometry", "hit testing"],
+            "transaction": {
+                "transaction_id": transaction_id,
+                "state": ObservationTransactionState.COMMITTED.value,
+                "states": states + [
+                    ObservationTransactionState.SEALED.value,
+                    ObservationTransactionState.COMMITTED.value,
+                ],
+                "capture_mode": "atomic_snapshot_core",
+                "locator_attestation_boundary": "independent",
+                "observation_budget_ms": options.observation_budget_ms,
+            },
         }
         scroll = {
             **raw["document"], "viewport_width": raw["viewport"]["width"], "viewport_height": raw["viewport"]["height"],
@@ -372,7 +496,7 @@ class PageObserver:
             "can_scroll_down": raw["document"]["scroll_y"] + raw["viewport"]["height"] < raw["document"]["height"],
             "scrollable_containers": raw["scrollables"],
         }
-        obs = PageObservation(
+        observation_values = dict(
             observation_id=observation_id, timestamp=datetime.now(timezone.utc).isoformat(),
             captured_at_ms=captured, browser_profile=self.backend.browser_config.profile.value,
             url=raw["url"], title=raw["title"], viewport=raw["viewport"], document=raw["document"],
@@ -381,52 +505,244 @@ class PageObserver:
             spatial_relationships=relationships, scroll_context=scroll,
             freshness={"fingerprint": fingerprint, "max_age_ms": options.freshness_max_age_ms,
                        "page_id": self.backend.page_id, "captured_at_ms": captured},
-            diagnostics=diagnostics)
-        while len(json.dumps(obs.to_dict(), ensure_ascii=False).encode()) > options.max_payload_bytes:
+            diagnostics=diagnostics, transaction_id=transaction_id,
+            snapshot_id=snapshot_id, commit_id=commit_id, observation_hash="")
+        while len(json.dumps(observation_values, ensure_ascii=False).encode()) > options.max_payload_bytes:
             diagnostics["truncated"]["payload"] = True
-            if obs.visible_text: obs.visible_text.pop()
-            elif obs.spatial_relationships: obs.spatial_relationships.pop()
-            elif obs.interactive_elements: obs.interactive_elements.pop()
+            if observation_values["visible_text"]: observation_values["visible_text"].pop()
+            elif observation_values["spatial_relationships"]: observation_values["spatial_relationships"].pop()
+            elif observation_values["interactive_elements"]: observation_values["interactive_elements"].pop()
             else: break
+        hash_payload = json.dumps(observation_values, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        observation_hash = hashlib.sha256(hash_payload.encode()).hexdigest()
+        observation_values["observation_hash"] = observation_hash
+        states.append(ObservationTransactionState.SEALED.value)
+        obs = PageObservation(**observation_values)
+        require_budget("publication")
+        committed_at = time.time_ns() // 1_000_000
+        snapshot_core = SnapshotCore(
+            snapshot_id=snapshot_id, transaction_id=transaction_id,
+            captured_at_ms=captured, browser_binding=browser_binding,
+            signature=raw["signature"], payload_hash=snapshot_hash,
+            capture_evidence={"mode": "single_browser_evaluation", "complete": True},
+        )
+        commit = ObservationCommit(
+            commit_id=commit_id, transaction_id=transaction_id,
+            observation_id=observation_id, snapshot_id=snapshot_id,
+            observation_hash=observation_hash, committed_at_ms=committed_at,
+            state=ObservationTransactionState.COMMITTED,
+            browser_binding=browser_binding,
+            evidence={"snapshot_core": snapshot_core.to_dict()},
+        )
+        # The durable bundle is the publication point.  Only a complete,
+        # atomically replaced observation+commit pair becomes visible.
+        self._publish_durable_commit(obs, commit)
         self._observations[observation_id] = obs
+        self._commits[observation_id] = commit
+        states.append(ObservationTransactionState.COMMITTED.value)
+        self._transactions[transaction_id] = ObservationTransactionEvidence(
+            transaction_id=transaction_id,
+            state=ObservationTransactionState.COMMITTED,
+            states=states,
+            browser_binding=browser_binding,
+            started_at_ms=started,
+            completed_at_ms=committed_at,
+        )
         if len(self._observations) > 20:
-            self._observations.pop(next(iter(self._observations)))
+            expired_id = next(iter(self._observations))
+            self._observations.pop(expired_id)
+            self._commits.pop(expired_id, None)
         return obs
 
     def _verify_locator_candidates(self, candidates: list[dict[str, Any]]) -> None:
         """Use the execution resolver's primitives to attest advertised cardinality."""
         for candidate in candidates:
-            kind = candidate["locator_type"]
-            value = candidate["locator_value"]
-            try:
-                if kind == "role_name":
-                    count = self.backend.page.get_by_role(
-                        value["role"], name=value["name"], exact=True
-                    ).count()
-                elif kind == "exact_text":
-                    count = self.backend.page.get_by_text(value, exact=True).count()
-                elif kind == "test_id":
-                    count = self.backend.page.get_by_test_id(value).count()
-                elif kind == "css":
-                    count = self.backend.page.locator(value).count()
-                elif kind == "within_region":
-                    # A constrained role/name cannot succeed when its primary identity
-                    # has no candidates, regardless of the proposed region.
-                    count = self.backend.page.get_by_role(
-                        value["role"], name=value["name"], exact=True
-                    ).count()
-                else:
-                    continue
-            except Exception as exc:
-                candidate.update({"match_count": None, "unique": False, "confidence": 0.0,
-                                  "known_ambiguity": f"cardinality check failed: {type(exc).__name__}"})
+            count, failure = self._query_locator_candidate(candidate)
+            if count is None and failure is None:
                 continue
-            candidate["match_count"] = count
-            candidate["unique"] = count == 1
-            if count != 1:
-                candidate["confidence"] = min(candidate["confidence"], .45)
-                candidate["known_ambiguity"] = f"{count} matching elements"
+            self._apply_locator_attestation(candidate, count, failure)
         candidates.sort(key=lambda item: (not item["unique"], -item["confidence"]))
+
+    def _query_locator_candidate(
+        self, candidate: dict[str, Any]
+    ) -> tuple[int | None, str | None]:
+        kind = candidate["locator_type"]
+        value = candidate["locator_value"]
+        try:
+            if kind == "role_name":
+                count = self.backend.page.get_by_role(
+                    value["role"], name=value["name"], exact=True
+                ).count()
+            elif kind == "exact_text":
+                count = self.backend.page.get_by_text(value, exact=True).count()
+            elif kind == "test_id":
+                count = self.backend.page.get_by_test_id(value).count()
+            elif kind == "css":
+                count = self.backend.page.locator(value).count()
+            elif kind == "within_region":
+                region = self.backend.page.get_by_role(
+                    value["region_role"],
+                    name=value["region_name"],
+                    exact=True,
+                ) if value.get("region_name") else self.backend.page.get_by_role(
+                    value["region_role"]
+                )
+                count = region.get_by_role(
+                    value["role"], name=value["name"], exact=True
+                ).count()
+            else:
+                return None, None
+        except Exception as exc:
+            return None, type(exc).__name__
+        return count, None
+
+    @staticmethod
+    def _apply_locator_attestation(
+        candidate: dict[str, Any], count: int | None, failure: str | None
+    ) -> None:
+        if failure is not None:
+            candidate.update({
+                "match_count": None, "unique": False, "confidence": 0.0,
+                "known_ambiguity": f"cardinality check failed: {failure}",
+            })
+            return
+        candidate["match_count"] = count
+        candidate["unique"] = count == 1
+        if count != 1:
+            candidate["confidence"] = min(candidate["confidence"], .45)
+            candidate["known_ambiguity"] = f"{count} matching elements"
+
+    @staticmethod
+    def _locator_query_key(candidate: dict[str, Any]) -> tuple[Any, ...] | None:
+        kind = candidate["locator_type"]
+        value = candidate["locator_value"]
+        if kind == "role_name":
+            return ("role_name", value["role"], value["name"], True)
+        if kind == "within_region":
+            return (
+                "within_region", value["region_role"], value.get("region_name"),
+                value["role"], value["name"], True,
+            )
+        if kind in {"exact_text", "test_id", "css"}:
+            return (kind, json.dumps(value, ensure_ascii=False, sort_keys=True))
+        return None
+
+    @staticmethod
+    def _playwright_region_role(role: str) -> str:
+        return {
+            "header": "banner",
+            "section": "region",
+            "footer": "contentinfo",
+            "aside": "complementary",
+        }.get(role, role)
+
+    def attest_observation_locators(
+        self, observation_id: str
+    ) -> tuple[LocatorAttestation, ...]:
+        """Collect immutable locator evidence outside the observation transaction."""
+        observation = self._observations.get(observation_id)
+        commit = self._commits.get(observation_id)
+        if observation is None or commit is None:
+            raise KeyError(f"unknown observation: {observation_id}")
+        binding = self._browser_binding()
+        if (
+            observation.commit_id != commit.commit_id
+            or observation.observation_hash != commit.observation_hash
+            or self._binding_identity(binding)
+            != self._binding_identity(commit.browser_binding)
+        ):
+            raise RuntimeError("observation_attestation_binding_mismatch")
+        records: list[LocatorAttestation] = []
+        query_results: dict[
+            tuple[Any, ...], tuple[int | None, str | None, str]
+        ] = {}
+        for element in observation.interactive_elements:
+            for published in element["locator_candidates"]:
+                query_key = self._locator_query_key(published)
+                if query_key is None:
+                    continue
+                candidate = dict(published)
+                query_reused = query_key in query_results
+                if query_reused:
+                    count, failure, query_id = query_results[query_key]
+                else:
+                    count, failure = self._query_locator_candidate(candidate)
+                    query_id = str(uuid.uuid4())
+                    query_results[query_key] = (count, failure, query_id)
+                self._apply_locator_attestation(candidate, count, failure)
+                if candidate["match_count"] is None:
+                    status = LocatorAttestationStatus.ATTESTATION_FAILED
+                elif candidate["match_count"] == 0:
+                    status = LocatorAttestationStatus.ATTESTED_MISSING
+                elif candidate["match_count"] == 1:
+                    status = LocatorAttestationStatus.ATTESTED_UNIQUE
+                else:
+                    status = LocatorAttestationStatus.ATTESTED_AMBIGUOUS
+                evidence = {
+                    "observation_id": observation_id,
+                    "commit_id": commit.commit_id,
+                    "candidate_id": candidate["candidate_id"],
+                    "element_id": element["element_id"],
+                    "locator_type": candidate["locator_type"],
+                    "locator_value": candidate["locator_value"],
+                    "match_count": candidate["match_count"],
+                    "unique": candidate["unique"],
+                    "status": status.value,
+                    "query_id": query_id,
+                    "query_reused": query_reused,
+                    "browser_binding": binding,
+                }
+                evidence_hash = hashlib.sha256(json.dumps(
+                    evidence, ensure_ascii=False, sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()).hexdigest()
+                record = LocatorAttestation(
+                    attestation_id=str(uuid.uuid4()),
+                    query_id=query_id, query_reused=query_reused,
+                    observation_id=observation_id,
+                    commit_id=commit.commit_id,
+                    candidate_id=candidate["candidate_id"],
+                    element_id=element["element_id"],
+                    locator_type=candidate["locator_type"],
+                    locator_value=candidate["locator_value"],
+                    attested_at_ms=time.time_ns() // 1_000_000,
+                    browser_binding=binding,
+                    match_count=candidate["match_count"],
+                    unique=candidate["unique"],
+                    status=status,
+                    confidence=candidate["confidence"],
+                    known_ambiguity=candidate["known_ambiguity"],
+                    evidence_hash=evidence_hash,
+                )
+                self._attestations[record.attestation_id] = record
+                records.append(record)
+        return tuple(records)
+
+    def evidence_view(
+        self,
+        observation_id: str,
+        *,
+        freshness: ObservationFreshnessResult | None = None,
+    ) -> ObservationEvidenceView:
+        observation = self._observations.get(observation_id)
+        commit = self._commits.get(observation_id)
+        if observation is None or commit is None:
+            raise KeyError(f"unknown observation: {observation_id}")
+        attestations = tuple(
+            record for record in self._attestations.values()
+            if record.observation_id == observation_id
+        )
+        for record in attestations:
+            if (
+                record.commit_id != commit.commit_id
+                or self._binding_identity(record.browser_binding)
+                != self._binding_identity(commit.browser_binding)
+            ):
+                raise RuntimeError("observation_attestation_binding_mismatch")
+        return ObservationEvidenceView(
+            observation=observation, commit=commit,
+            attestations=attestations, freshness=freshness,
+        )
 
     @staticmethod
     def _locator_candidates(e: dict[str, Any], elements: list[dict[str, Any]], regions: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -453,9 +769,24 @@ class PageObserver:
             region=next((r for r in regions if r["region_id"]==e["owning_region_id"]),None)
             count=sum(1 for x in elements if x["owning_region_id"]==e["owning_region_id"] and
                       x["semantic_role"]==e["semantic_role"] and x["accessible_name"]==e["accessible_name"])
-            add("within_region",{"region":region["accessible_name"] or region["semantic_role"] if region else e["owning_region_id"],
+            add("within_region",{
+                "region":region["accessible_name"] or region["semantic_role"] if region else e["owning_region_id"],
+                "region_role":PageObserver._playwright_region_role(
+                    region["semantic_role"] if region else "region"
+                ),
+                "region_name":region["accessible_name"] if region else None,
                 "role":e["semantic_role"],"name":e["accessible_name"]},count,.86,"role/name constrained to owning region")
-        return sorted(candidates,key=lambda x:(not x["unique"],-x["confidence"]))
+        ordered = sorted(candidates,key=lambda x:(not x["unique"],-x["confidence"]))
+        for index, candidate in enumerate(ordered, 1):
+            candidate["candidate_id"] = f"{e['element_id']}:candidate_{index}"
+            candidate["snapshot_match_count"] = candidate["match_count"]
+            candidate["snapshot_unique"] = candidate["unique"]
+            candidate["evidence_level"] = (
+                CandidateEvidenceLevel.SNAPSHOT_UNIQUE.value
+                if candidate["unique"] else CandidateEvidenceLevel.DERIVED.value
+            )
+            candidate["attestation_status"] = "not_present"
+        return ordered
 
     @staticmethod
     def _relationships(elements: list[dict[str, Any]], options: PageObservationOptions) -> list[dict[str, Any]]:
@@ -489,22 +820,34 @@ class PageObserver:
 
     def validate_reference(self, reference: ObservationReference) -> ObservationFreshnessResult:
         obs=self._observations.get(reference.observation_id)
-        if obs is None:return ObservationFreshnessResult(False,"unknown_observation")
+        commit=self._commits.get(reference.observation_id)
+        def result(fresh: bool, reason: str, element: dict[str, Any] | None = None) -> ObservationFreshnessResult:
+            return ObservationFreshnessResult(
+                fresh, reason, element,
+                commit_id=commit.commit_id if commit else None,
+                observation_hash=commit.observation_hash if commit else None,
+            )
+        if obs is None:return result(False,"unknown_observation")
         if self.backend.page_id != obs.freshness["page_id"] or self.backend.page.url != obs.url:
-            return ObservationFreshnessResult(False,"page_navigated")
+            return result(False,"page_navigated")
         if time.time_ns()//1_000_000-obs.captured_at_ms>obs.freshness["max_age_ms"]:
-            return ObservationFreshnessResult(False,"observation_expired")
+            return result(False,"observation_expired")
         old=next((e for e in obs.interactive_elements if e["element_id"]==reference.element_id),None)
-        if old is None:return ObservationFreshnessResult(False,"unknown_element")
+        if old is None:return result(False,"unknown_element")
+        continuity_token = old.get("node_continuity_token")
+        if not continuity_token:return result(False,"node_continuity_unavailable")
         raw=self.backend.page.evaluate(_VALIDATE_REFERENCE_JS,{"dom_tag":old["dom_tag"],
-            "semantic_role":old["semantic_role"],"accessible_name":old["accessible_name"]})
-        if raw["match_count"]!=1:return ObservationFreshnessResult(False,"element_disappeared_or_ambiguous")
+            "semantic_role":old["semantic_role"],"accessible_name":old["accessible_name"],
+            "placeholder":old["placeholder"]})
+        if raw["match_count"]!=1:return result(False,"element_disappeared_or_ambiguous")
+        if raw.get("node_continuity_token") != continuity_token:
+            return result(False,"element_replaced")
         found=dict(old)
         for key in ("visible","enabled","selected","pressed"):
             found[key]=raw[key]
         for key,value in reference.expected.items():
-            if found.get(key)!=value:return ObservationFreshnessResult(False,f"expected_property_changed:{key}")
+            if found.get(key)!=value:return result(False,f"expected_property_changed:{key}")
         fingerprint=hashlib.sha256(raw["signature"].encode()).hexdigest()
         if fingerprint != obs.freshness["fingerprint"]:
-            return ObservationFreshnessResult(True,"re_resolved_with_unrelated_dom_change",found)
-        return ObservationFreshnessResult(True,"re_resolved",found)
+            return result(True,"same_node_with_unrelated_dom_change",found)
+        return result(True,"same_dom_node",found)

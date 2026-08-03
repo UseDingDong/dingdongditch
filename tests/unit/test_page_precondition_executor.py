@@ -142,3 +142,18 @@ def test_legacy_receipt_fields_keep_original_meanings():
     assert receipt.page_precondition["actual_url"] == item.page.url
     assert receipt.page_precondition["matched"] is True
     assert receipt.page_precondition["fragment_differences_ignored"] is True
+
+
+def test_legacy_precondition_bootstraps_only_an_uninitialized_blank_page():
+    item = backend()
+    item.page.url = "about:blank"
+    navigations = []
+
+    def ensure(url, timeout_ms):
+        navigations.append((url, timeout_ms))
+        item.page.url = url
+
+    item.ensure_on_url = ensure
+    receipt = execute_operation(operation(None), backend=item)
+    assert navigations == [("https://example.test/canonical-reference", 10_000)]
+    assert receipt.page_precondition["result"] == "pass"

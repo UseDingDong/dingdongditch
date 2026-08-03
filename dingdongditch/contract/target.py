@@ -185,9 +185,21 @@ class TargetResolutionTrace:
     frame_locator: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        stages: list[dict[str, Any]] = []
+        for item in self.stages:
+            serialized = item.to_dict()
+            stages.append(serialized)
+            # Preserve the established public constraint-stage vocabulary
+            # alongside the newer two-phase trace names.
+            if item.stage in {"identity_constraint", "actionability_constraint"}:
+                stages.append({
+                    **serialized,
+                    "stage": "constraint",
+                    "phase": item.stage.removesuffix("_constraint"),
+                })
         data = {
             "primary_locator": self.primary_locator,
-            "stages": [s.to_dict() for s in self.stages],
+            "stages": stages,
             "final_candidate_count": self.final_candidate_count,
             "cardinality_policy": self.cardinality_policy,
             "cardinality_passed": self.cardinality_passed,

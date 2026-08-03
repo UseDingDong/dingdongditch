@@ -21,11 +21,25 @@ def test_benchmark_is_the_public_api_default():
     config = BrowserConfig()
     assert config.profile is BrowserProfile.BENCHMARK
     assert config.describe()["profile"] == "benchmark"
+    assert config.describe()["persistent"] is False
+    assert config.describe()["security_warning"] is None
 
 
 def test_profile_is_parsed_from_public_json_api():
     config = browser_config_from_dict({"profile": "dingdong", "headless": True})
     assert config.profile is BrowserProfile.DINGDONG
+    description = config.describe()
+    assert description["persistent"] is True
+    assert description["profile_isolation"] == "dedicated_runtime_directory"
+    assert "not a security sandbox" in description["security_warning"]
+
+
+def test_default_profile_metadata_discloses_authenticated_state_risk():
+    description = BrowserConfig(profile=BrowserProfile.DEFAULT).describe()
+    assert description["profile_isolation"] == "existing_user_chrome_profile"
+    assert description["authenticated_state_risk"] == (
+        "existing_authenticated_user_state_accessible_to_plans"
+    )
 
 
 def test_dingdong_directory_is_deterministic_and_overrideable(tmp_path, monkeypatch):

@@ -7,6 +7,20 @@ observes the page, and returns **attested receipts**.
 It is **not** an AI assistant, built-in planner, autonomous website explorer,
 workflow authoring system, browser, or Playwright replacement.
 
+## Durable continuity (optional)
+
+`ContinuitySession` is a thin host-side control-state journal above the
+execution runtime. It records host-authorized browser commands, leased browser
+binding metadata, and integrity-checked references to already-published
+DingDongDitch receipts. It does not execute commands, choose next actions,
+retry unknown outcomes, or persist browser-local objects.
+
+Its command lifecycle is `proposed -> authorized -> dispatched`, followed by
+`verified`, `failed`, or `outcome_unknown`; cancellation is allowed only before
+dispatch. Reopening a session after an unconfirmed dispatch records
+`outcome_unknown` and never replays the command. The reasoning host remains
+responsible for every subsequent decision.
+
 ## Architecture boundary
 
 ```text
@@ -103,6 +117,14 @@ be found. JSON plans accept the equivalent `"profile": "benchmark"`,
 `"dingdong"`, or `"default"` browser field. Set
 `DINGDONGDITCH_PROFILE_DIR` to explicitly relocate the isolated `dingdong`
 profile.
+
+> **Security warning:** persistent profiles are state containers, not security
+> sandboxes. `dingdong` retains cookies and browser-local state between runs.
+> `default` gives plans access to the existing Chrome Default profile, including
+> authenticated sessions. The profile lease prevents concurrent DingDongDitch
+> use only; it does not isolate a plan from that profile's data or permissions.
+> Use the default `benchmark` profile unless persistent state is explicitly
+> required and the plan is trusted.
 
 - Adaptive timing: [`Engineering/Phase 3/ADAPTIVE_PLAN_TIMING.md`](./Engineering/Phase%203/ADAPTIVE_PLAN_TIMING.md)  
 - Iframes: [`Engineering/Phase 3/IFRAME_TARGETING.md`](./Engineering/Phase%203/IFRAME_TARGETING.md)  
@@ -202,4 +224,15 @@ python examples/declared_wait_conditions_demo.py
 python examples/browser_config_demo.py --engine webkit
 ```
 
-Milestone 1 is a vertical slice only—not a complete platform.
+DingDongDitch is pre-1.0 alpha software. Public contracts may change between
+minor releases; review the changelog when upgrading.
+
+## Community and project policies
+
+- [Contributing](./CONTRIBUTING.md)
+- [Support](./SUPPORT.md)
+- [Security policy](./SECURITY.md)
+- [Governance](./GOVERNANCE.md)
+- [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [Changelog](./CHANGELOG.md)
+- [MIT License](./LICENSE)

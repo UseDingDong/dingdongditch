@@ -19,6 +19,7 @@ from dingdongditch.contract.target import (
 class LocatorStrategy(str, Enum):
     TEST_ID = "test_id"
     ROLE_NAME = "role_name"
+    PLACEHOLDER = "placeholder"
     EXACT_TEXT = "exact_text"
     CSS = "css"
 
@@ -60,6 +61,7 @@ class Locator:
                 compile_name_regex(self.name)
         elif self.strategy in (
             LocatorStrategy.TEST_ID,
+            LocatorStrategy.PLACEHOLDER,
             LocatorStrategy.EXACT_TEXT,
             LocatorStrategy.CSS,
         ):

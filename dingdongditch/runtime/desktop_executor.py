@@ -175,23 +175,39 @@ def execute_desktop_plan(
             screenshots: list[dict[str, Any]] = []
             if _should_capture(config, verdict):
                 try:
-                    screenshots.append(
-                        backend.capture_screenshot(
-                            plan_id=plan.plan_id,
-                            operation_id=operation.operation_id,
-                            reason=(
-                                "after_success"
-                                if verdict == Verdict.VERIFIED
-                                else "failure"
-                            ),
-                            config=config,
-                        )
+                    screenshot = backend.capture_screenshot(
+                        plan_id=plan.plan_id,
+                        operation_id=operation.operation_id,
+                        reason=(
+                            "after_success"
+                            if verdict == Verdict.VERIFIED
+                            else "failure"
+                        ),
+                        config=config,
                     )
+                    requested_regions = [
+                        region.describe()
+                        for region in config.desktop_redaction_regions
+                    ]
+                    if config.mandatory_redaction and (
+                        screenshot.get("redaction_status") != "applied"
+                        or screenshot.get("redacted_regions") != requested_regions
+                    ):
+                        raise DesktopBackendError(
+                            "desktop backend did not attest every mandatory "
+                            "redaction region",
+                            failure_kind="screenshot_redaction_failed",
+                        )
+                    screenshots.append(screenshot)
                 except Exception as shot_error:
                     dispatch.evidence["screenshot_error"] = str(shot_error)
+                    dispatch.evidence["requested_desktop_redaction_regions"] = [
+                        region.describe()
+                        for region in config.desktop_redaction_regions
+                    ]
                     if config.mandatory_redaction:
                         verdict = Verdict.EXECUTION_FAILED
-                        dispatch.failure_kind = "screenshot_failed"
+                        dispatch.failure_kind = "screenshot_redaction_failed"
                         dispatch.error = str(shot_error)
             receipt = DesktopActionReceipt(
                 schema_version=DESKTOP_RECEIPT_SCHEMA_VERSION,

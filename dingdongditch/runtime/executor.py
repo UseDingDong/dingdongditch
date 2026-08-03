@@ -141,7 +141,7 @@ def _failed_receipt(
         page_precondition=(action_evidence or {}).get("page_precondition"),
         navigation_occurred=False,
         dispatch_document_url=(action_evidence or {}).get("actual_url"),
-    )
+    ).seal()
 
 
 def _execute_operation(
@@ -322,6 +322,13 @@ def _execute_operation(
         if operation.action.type != ActionType.NAVIGATE:
             if operation.page_precondition is None:
                 actual_url = backend.page.url
+                if actual_url in ("about:blank", "about:blank/", ""):
+                    # Preserve the original standalone-operation bootstrap:
+                    # a newly created blank page may enter the host-declared
+                    # document before the legacy exact-URL precondition is
+                    # evaluated.  A nonblank mismatch is never navigated.
+                    backend.ensure_on_url(operation.url, operation.timeout_ms)
+                    actual_url = backend.page.url
                 legacy_matched = backend._same_document_url(
                     actual_url, operation.url
                 )
@@ -472,7 +479,7 @@ def _execute_operation(
                     "timeout_occurred": True,
                     "timeout_kind": "plan_deadline",
                 },
-            )
+            ).seal()
 
         pre = backend.observe(collector)
         pre_obs = ObservationSummary(
@@ -674,7 +681,18 @@ def _execute_operation(
             receipt.action_evidence = dict(receipt.action_evidence or {})
             receipt.action_evidence["screenshots"] = [shot]
             receipt.action_evidence["screenshot_policy"] = config.describe()
-        return receipt
+            if config.mandatory_redaction and (
+                not shot.get("captured")
+                or shot.get("redaction_status") != "applied"
+            ):
+                receipt.verdict = Verdict.EXECUTION_FAILED
+                receipt.execution_status = "evidence_capture_failed"
+                receipt.failure_kind = "screenshot_redaction_failed"
+                receipt.execution_error = (
+                    "mandatory screenshot redaction could not be honored: "
+                    f"{shot.get('capture_error') or shot.get('redaction_status')}"
+                )
+        return receipt.seal()
     except Exception as exc:
         return _failed_receipt(
             operation=operation,

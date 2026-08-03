@@ -116,6 +116,8 @@ def _primary_playwright_locator(
 ) -> PlaywrightLocator:
     if locator.strategy == LocatorStrategy.TEST_ID:
         return root.get_by_test_id(locator.value)
+    if locator.strategy == LocatorStrategy.PLACEHOLDER:
+        return root.get_by_placeholder(locator.value, exact=True)
     if locator.strategy == LocatorStrategy.CSS:
         return root.locator(locator.value)
     if locator.strategy == LocatorStrategy.EXACT_TEXT:

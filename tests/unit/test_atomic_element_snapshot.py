@@ -124,3 +124,21 @@ def test_detachment_or_navigation_race_does_not_fallback_to_new_state():
 
     assert backend._atomic_snapshot_fallback_count == 0
     handle.is_visible.assert_not_called()
+
+
+def test_detached_atomic_result_is_unavailable_without_retry_or_fallback():
+    backend = PlaywrightBackend(BrowserConfig(headless=True))
+    handle = MagicMock()
+    handle.evaluate.return_value = atomic_payload(connected=False)
+    backend._resolve_scoped_target = MagicMock(return_value=resolved(handle))
+
+    snapshot = backend.capture_element_snapshot(locator())
+
+    assert snapshot.availability == SnapshotAvailability.UNAVAILABLE
+    assert snapshot.match_count == 1
+    assert snapshot.exists is True
+    assert snapshot.visible is None
+    assert snapshot.error == "element detached during atomic snapshot"
+    assert handle.evaluate.call_count == 1
+    assert backend._resolve_scoped_target.call_count == 1
+    assert backend._atomic_snapshot_fallback_count == 0

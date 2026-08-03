@@ -7,7 +7,18 @@ name = "dingdongditch"
 version = "0.2.0"
 description = "Model-neutral browser execution runtime (bundled Chromium + Firefox + WebKit)"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
+keywords = ["browser-automation", "execution-runtime", "playwright", "testing"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Software Development :: Testing",
+]
 dependencies = [
   "playwright>=1.40.0",
 ]

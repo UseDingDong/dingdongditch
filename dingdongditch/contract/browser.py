@@ -111,12 +111,37 @@ class BrowserConfig:
     profile: BrowserProfile = BrowserProfile.BENCHMARK
 
     def describe(self) -> dict[str, Any]:
+        persistent = self.profile != BrowserProfile.BENCHMARK
         return {
             "provider": self.provider.value,
             "engine": self.engine.value,
             "channel": self.channel.value,
             "headless": self.headless,
             "profile": self.profile.value,
+            "persistent": persistent,
+            "profile_isolation": (
+                "fresh_ephemeral_context"
+                if self.profile == BrowserProfile.BENCHMARK
+                else "dedicated_runtime_directory"
+                if self.profile == BrowserProfile.DINGDONG
+                else "existing_user_chrome_profile"
+            ),
+            "authenticated_state_risk": (
+                "none_from_prior_sessions"
+                if self.profile == BrowserProfile.BENCHMARK
+                else "persistent_state_accessible_to_plans"
+                if self.profile == BrowserProfile.DINGDONG
+                else "existing_authenticated_user_state_accessible_to_plans"
+            ),
+            "security_warning": (
+                None
+                if self.profile == BrowserProfile.BENCHMARK
+                else (
+                    "Persistent profiles retain cookies and browser-local state; "
+                    "the filesystem lease prevents concurrent DingDongDitch use "
+                    "but is not a security sandbox."
+                )
+            ),
             "download_policy": self.download_policy.describe(),
         }
 
