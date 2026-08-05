@@ -100,6 +100,7 @@ def _failed_receipt(
     backend_identity: str,
     browser_identity: str,
     action_evidence: dict | None = None,
+    target_resolution: dict | None = None,
 ) -> ExecutionReceipt:
     finished = monotonic_ms()
     return ExecutionReceipt(
@@ -134,7 +135,7 @@ def _failed_receipt(
         runtime_version=__version__,
         action_executed_successfully=False,
         expectations_declared=len(operation.expectations),
-        target_resolution=None,
+        target_resolution=target_resolution,
         browser=browser,
         failure_kind=failure_kind,
         action_evidence=action_evidence,
@@ -281,6 +282,10 @@ def _execute_operation(
     failure_kind: str | None = None
     action_evidence: dict | None = None
     observation_validation: dict[str, Any] | None = None
+    guard_branch: str | None = None
+    guard_probe_resolution: dict[str, Any] | None = None
+    active_expectations = operation.expectations
+    guarded_skip = False
 
     try:
         if owns_backend:
@@ -518,30 +523,95 @@ def _execute_operation(
                     },
                 )
 
-        dispatch = backend.dispatch(
-            operation, collector=collector, plan_timing=plan_timing
-        )
-        action_started = dispatch.started_at_ms
-        action_completed = dispatch.completed_at_ms
-        action_ok = dispatch.ok
-        execution_status = "completed" if dispatch.ok else "failed"
-        execution_error = dispatch.error
-        failure_kind = dispatch.failure_kind
-        action_evidence = dispatch.action_evidence
-        if observation_validation is not None:
-            action_evidence = dict(action_evidence or {})
-            action_evidence["observation_transaction"] = observation_validation
-        if dispatch.resolution_trace is not None:
-            target_resolution = dispatch.resolution_trace.to_dict()
-        for raw in dispatch.recovery_attempts:
-            recovery_attempts.append(
-                RecoveryAttempt(
-                    reason=raw["reason"],
-                    attempt_index=raw["attempt_index"],
-                    occurred_at_ms=raw["occurred_at_ms"],
-                    detail=raw.get("detail", ""),
+        if operation.guard is not None:
+            probe_started = monotonic_ms()
+            try:
+                probe = backend.probe_guarded_action_target(operation)
+            except Exception as exc:
+                return _failed_receipt(
+                    operation=operation, started_at=started_at, collector=collector,
+                    locator_desc=locator_desc, execution_status="guard_resolution_failed",
+                    execution_error=f"guard target resolution failed: {type(exc).__name__}",
+                    failure_kind="guard_target_resolution_error",
+                    browser=backend.browser_environment(),
+                    backend_identity=backend.backend_identity,
+                    browser_identity=backend.browser_identity,
+                    action_evidence={"guarded": True, "branch": None, "dispatched": False,
+                                     "skipped": False, "already_satisfied": False,
+                                     "guard_expectation_results": [],
+                                     "normal_expectation_results": [],
+                                     "target_resolution_result": None},
                 )
+            guard_probe_resolution = probe.trace.to_dict()
+            if probe.ok:
+                guard_branch = "target_present"
+            elif probe.match_count == 0 and probe.failure_kind in {
+                "zero_after_primary", "zero_after_constraints"
+            }:
+                guard_branch = "target_absent"
+                guarded_skip = True
+                action_started = probe_started
+                action_completed = monotonic_ms()
+                action_ok = True
+                execution_status = "completed"
+                active_expectations = list(operation.guard.when_target_absent.expectations)
+                target_resolution = guard_probe_resolution
+                action_evidence = {
+                    "guarded": True, "branch": "target_absent",
+                    "dispatched": False, "skipped": True,
+                    "already_satisfied": True,
+                    "guard_target_resolution": guard_probe_resolution,
+                }
+            else:
+                return _failed_receipt(
+                    operation=operation, started_at=started_at, collector=collector,
+                    locator_desc=locator_desc, execution_status="guard_resolution_failed",
+                    execution_error=probe.error or "guarded target resolution failed",
+                    failure_kind=probe.failure_kind,
+                    browser=backend.browser_environment(),
+                    backend_identity=backend.backend_identity,
+                    browser_identity=backend.browser_identity,
+                    action_evidence={
+                        "guarded": True, "branch": None, "dispatched": False,
+                        "skipped": False, "already_satisfied": False,
+                        "guard_target_resolution": guard_probe_resolution,
+                        "guard_expectation_results": [],
+                        "normal_expectation_results": [],
+                        "target_resolution_result": guard_probe_resolution,
+                    },
+                    target_resolution=guard_probe_resolution,
+                )
+
+        if not guarded_skip:
+            dispatch = backend.dispatch(
+                operation, collector=collector, plan_timing=plan_timing
             )
+            action_started = dispatch.started_at_ms
+            action_completed = dispatch.completed_at_ms
+            action_ok = dispatch.ok
+            execution_status = "completed" if dispatch.ok else "failed"
+            execution_error = dispatch.error
+            failure_kind = dispatch.failure_kind
+            action_evidence = dispatch.action_evidence
+            if operation.guard is not None:
+                action_evidence = dict(action_evidence or {})
+                action_evidence.update({
+                    "guarded": True, "branch": "target_present", "skipped": False,
+                    "already_satisfied": False,
+                    "guard_target_resolution": guard_probe_resolution,
+                })
+            if observation_validation is not None:
+                action_evidence = dict(action_evidence or {})
+                action_evidence["observation_transaction"] = observation_validation
+            if dispatch.resolution_trace is not None:
+                target_resolution = dispatch.resolution_trace.to_dict()
+            for raw in dispatch.recovery_attempts:
+                recovery_attempts.append(
+                    RecoveryAttempt(
+                        reason=raw["reason"], attempt_index=raw["attempt_index"],
+                        occurred_at_ms=raw["occurred_at_ms"], detail=raw.get("detail", ""),
+                    )
+                )
 
         post = backend.observe(collector)
         post_obs = ObservationSummary(
@@ -562,7 +632,7 @@ def _execute_operation(
                 break
 
         verification_completed = monotonic_ms()
-        if action_ok and operation.expectations:
+        if action_ok and active_expectations:
             deadline = monotonic_ms() + operation.timeout_ms
             if plan_timing is not None and plan_timing.plan_deadline_ms is not None:
                 deadline = min(deadline, plan_timing.plan_deadline_ms)
@@ -570,7 +640,7 @@ def _execute_operation(
                 verification_completed = monotonic_ms()
                 expectation_results = evaluate_expectations(
                     backend=backend,
-                    expectations=operation.expectations,
+                    expectations=list(active_expectations),
                     collector=collector,
                     action_started_at_ms=action_started,
                     verification_completed_at_ms=verification_completed,
@@ -599,7 +669,7 @@ def _execute_operation(
                     if signal.kind.value == "network" and "records" in signal.payload:
                         network_payload = signal.payload
                         break
-        elif action_ok and not operation.expectations:
+        elif action_ok and not active_expectations:
             pass
 
         used_ids: set[str] = set()
@@ -622,12 +692,31 @@ def _execute_operation(
 
         verdict = _decide_verdict(
             action_ok=action_ok,
-            expectations_declared=len(operation.expectations),
+            expectations_declared=len(active_expectations),
             expectation_results=expectation_results,
-            freshness_stale=freshness.stale_signal_ids if operation.expectations else [],
+            freshness_stale=freshness.stale_signal_ids if active_expectations else [],
             action_type=operation.action.type.value,
             action_evidence=action_evidence,
         )
+
+        if operation.guard is not None:
+            action_evidence = dict(action_evidence or {})
+            serialized_results = [result.to_dict() for result in expectation_results]
+            action_evidence["guard_expectation_results"] = (
+                serialized_results if guard_branch == "target_absent" else []
+            )
+            action_evidence["normal_expectation_results"] = (
+                serialized_results if guard_branch == "target_present" else []
+            )
+            action_evidence["target_resolution_result"] = target_resolution
+            if guard_branch == "target_absent" and verdict != Verdict.VERIFIED:
+                action_evidence["already_satisfied"] = False
+                failure_kind = "guarded_target_absent_condition_not_proven"
+                execution_status = "guard_condition_failed"
+                execution_error = (
+                    "guarded target was absent and the declared already-satisfied "
+                    "condition was not proven"
+                )
 
         finished = monotonic_ms()
         receipt = ExecutionReceipt(
@@ -654,8 +743,8 @@ def _execute_operation(
             backend_identity=backend.backend_identity,
             browser_identity=backend.browser_identity,
             runtime_version=__version__,
-            action_executed_successfully=action_ok,
-            expectations_declared=len(operation.expectations),
+            action_executed_successfully=action_ok and not guarded_skip,
+            expectations_declared=len(active_expectations),
             target_resolution=target_resolution,
             browser=backend.browser_environment(),
             failure_kind=failure_kind,
@@ -670,6 +759,7 @@ def _execute_operation(
             dispatch_document_url=backend.page.url,
             telemetry=list(backend.telemetry),
         )
+
         from dingdongditch.contract.screenshot import ScreenshotConfig, ScreenshotPolicy
         config = screenshot_config or operation.screenshot_config or ScreenshotConfig()
         policy = config.policy

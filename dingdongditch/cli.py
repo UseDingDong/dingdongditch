@@ -7,6 +7,7 @@ Not a planner, explorer, or workflow author. No second executor.
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 import sys
 from pathlib import Path
@@ -14,6 +15,9 @@ from dingdongditch.runtime.publication import publish_json
 from typing import Sequence
 
 from dingdongditch.contract.browser import BrowserConfigError
+from dingdongditch.contract.browser import BrowserConfig
+from dingdongditch.authentication import AuthenticationError, ProfileManager
+from dingdongditch.backends.playwright_backend import PlaywrightBackend
 from dingdongditch.contract.plan import PlanReceipt, PlanVerdict
 from dingdongditch.plan_json import (
     PlanLoadError,
@@ -99,43 +103,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    run = sub.add_parser(
-        "run-plan",
-        help="Load a JSON plan and execute it through the native plan executor",
-    )
-    run.add_argument(
-        "plan",
-        type=str,
-        help="Path to a JSON plan document, or '-' to read UTF-8 JSON from stdin",
-    )
-    run.add_argument(
-        "--engine",
-        choices=("chromium", "firefox", "webkit"),
-        default=None,
-        help="Override plan browser engine (CLI wins over JSON; no fallback)",
-    )
-    headed = run.add_mutually_exclusive_group()
-    headed.add_argument(
-        "--headed",
-        action="store_true",
-        help="Override plan to headed mode (CLI wins over JSON)",
-    )
-    headed.add_argument(
-        "--headless",
-        action="store_true",
-        help="Override plan to headless mode (CLI wins over JSON)",
-    )
-    run.add_argument(
-        "--output",
-        type=str,
-        default=None,
-        help="Write the complete PlanReceipt JSON to this path",
-    )
-    run.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Print Python traceback on unexpected internal errors",
-    )
+    for command in ("run-plan", "run"):
+        run = sub.add_parser(command, help="Load a JSON plan and execute it")
+        run.add_argument("plan", help="JSON plan path, or '-' for UTF-8 stdin")
+        run.add_argument("--engine", choices=("chromium", "firefox", "webkit"), default=None)
+        headed = run.add_mutually_exclusive_group()
+        headed.add_argument("--headed", action="store_true")
+        headed.add_argument("--headless", action="store_true")
+        run.add_argument("--output", default=None)
+        run.add_argument("--verbose", action="store_true")
+        run.add_argument("--profile", default=None, help="Created named persistent profile")
+
+    profile = sub.add_parser("profile", help="Manage browser profiles")
+    profile_sub = profile.add_subparsers(dest="profile_command", required=True)
+    create = profile_sub.add_parser("create")
+    create.add_argument("name")
+    profile_sub.add_parser("list")
+    remove = profile_sub.add_parser("remove")
+    remove.add_argument("name")
+
+    session = sub.add_parser("session", help="Manage exported browser session state")
+    session_sub = session.add_subparsers(dest="session_command", required=True)
+    export = session_sub.add_parser("export")
+    export.add_argument("profile")
+    export.add_argument("file")
+    import_cmd = session_sub.add_parser("import")
+    import_cmd.add_argument("profile")
+    import_cmd.add_argument("file")
+    clear = session_sub.add_parser("clear")
+    clear.add_argument("profile")
     return parser
 
 
@@ -155,6 +151,8 @@ def run_plan_command(args: argparse.Namespace) -> int:
             engine=args.engine,
             headless=headless_override,
         )
+        if args.profile is not None:
+            plan = replace(plan, browser_config=replace(plan.browser_config, profile=args.profile))
         # Explicit pre-dispatch validation (also performed inside execute_plan).
         plan.validate()
     except PlanLoadError as exc:
@@ -195,11 +193,55 @@ def run_plan_command(args: argparse.Namespace) -> int:
     return exit_code_for_verdict(receipt.plan_verdict)
 
 
+def profile_command(args: argparse.Namespace) -> int:
+    manager = ProfileManager()
+    try:
+        if args.profile_command == "create":
+            _print(f"profile_created={manager.create(args.name).name}")
+        elif args.profile_command == "list":
+            for info in manager.list():
+                _print(f"profile={info.name} created_at={info.created_at}")
+        else:
+            manager.remove(args.name)
+            _print(f"profile_removed={args.name}")
+        return EXIT_SUCCESS
+    except AuthenticationError as exc:
+        detail = exc.to_dict()
+        _print_err(" ".join(f"{key}={value}" for key, value in detail.items()))
+        return EXIT_INVALID_INPUT
+
+
+def session_command(args: argparse.Namespace) -> int:
+    backend: PlaywrightBackend | None = None
+    try:
+        backend = PlaywrightBackend(BrowserConfig(profile=args.profile))
+        backend.start()
+        if args.session_command == "export":
+            backend.authentication.export_session(Path(args.file))
+        elif args.session_command == "import":
+            backend.authentication.import_session(Path(args.file))
+        else:
+            backend.authentication.clear_session()
+        _print(f"session_{args.session_command}ed={args.profile}")
+        return EXIT_SUCCESS
+    except (AuthenticationError, BrowserConfigError) as exc:
+        kind = exc.kind.value if isinstance(exc, AuthenticationError) else exc.failure_kind.value
+        _print_err(f"error={kind} message={exc}")
+        return EXIT_INVALID_INPUT
+    finally:
+        if backend is not None:
+            backend.stop()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
-    if args.command == "run-plan":
+    if args.command in {"run-plan", "run"}:
         return run_plan_command(args)
+    if args.command == "profile":
+        return profile_command(args)
+    if args.command == "session":
+        return session_command(args)
     _print_err(f"error=unknown_command message={args.command}")
     return EXIT_INVALID_INPUT
 

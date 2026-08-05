@@ -29,6 +29,7 @@ from dingdongditch.contract.operation import (
     LocatorStrategy,
     Operation,
     TargetPreparation,
+    TARGET_BASED_ACTIONS,
 )
 from dingdongditch.contract.plan import ExecutionPlan, FailurePolicy
 from dingdongditch.contract.page import (
@@ -150,14 +151,18 @@ def browser_config_from_dict(data: Any, *, ctx: str = "browser") -> BrowserConfi
     headless = raw.get("headless", True)
     if not isinstance(headless, bool):
         raise PlanLoadError(f"{ctx}.headless must be a bool", code="invalid_type")
+    if "profile" in raw and not isinstance(raw["profile"], str):
+        raise PlanLoadError(f"{ctx}.profile must be a string", code="invalid_type")
     config = BrowserConfig(
         provider=provider,
         engine=engine,
         channel=channel,
         headless=headless,
         profile=(
-            _parse_enum(BrowserProfile, raw["profile"], ctx=f"{ctx}.profile")
-            if "profile" in raw else BrowserProfile.BENCHMARK
+            BrowserProfile(raw["profile"])
+            if "profile" in raw and raw["profile"] in {p.value for p in BrowserProfile}
+            else raw["profile"] if "profile" in raw and isinstance(raw["profile"], str)
+            else BrowserProfile.BENCHMARK
         ),
         download_policy=(
             _download_policy_from_dict(raw["download_policy"], ctx=f"{ctx}.download_policy")
@@ -754,6 +759,7 @@ def operation_from_dict(
                 "dialog_contract",
                 "page_precondition",
                 "target_preparation",
+                "guard",
             }
         ),
         ctx=ctx,
@@ -815,6 +821,49 @@ def operation_from_dict(
                 for index, item in enumerate(overlay_raw)
             )
         )
+    guard = None
+    if raw.get("guard") is not None:
+        from dingdongditch.contract.operation import OperationGuard, TargetAbsentGuard
+
+        guard_raw = _require_mapping(raw["guard"], ctx=f"{ctx}.guard")
+        _reject_unknown(guard_raw, frozenset({"when_target_absent"}), ctx=f"{ctx}.guard")
+        if "when_target_absent" not in guard_raw:
+            raise PlanLoadError(f"{ctx}.guard: missing when_target_absent", code="missing_field")
+        absent_raw = _require_mapping(
+            guard_raw["when_target_absent"], ctx=f"{ctx}.guard.when_target_absent"
+        )
+        _reject_unknown(
+            absent_raw,
+            frozenset({"expectations"}),
+            ctx=f"{ctx}.guard.when_target_absent",
+        )
+        absent_expectations = absent_raw.get("expectations")
+        if not isinstance(absent_expectations, list):
+            raise PlanLoadError(
+                f"{ctx}.guard.when_target_absent.expectations must be a list",
+                code="invalid_type",
+            )
+        if not absent_expectations:
+            raise PlanLoadError(
+                f"{ctx}.guard.when_target_absent.expectations must not be empty",
+                code="invalid_plan",
+            )
+        guard = OperationGuard(
+            when_target_absent=TargetAbsentGuard(
+                expectations=tuple(
+                    _expectation_from_dict(
+                        item,
+                        ctx=f"{ctx}.guard.when_target_absent.expectations[{index}]",
+                    )
+                    for index, item in enumerate(absent_expectations)
+                )
+            )
+        )
+        if action.locator is None or action.type not in TARGET_BASED_ACTIONS:
+            raise PlanLoadError(
+                f"{ctx}.guard is supported only for target-based actions",
+                code="invalid_plan",
+            )
     return Operation(
         operation_id=raw["operation_id"],
         url=url,
@@ -844,6 +893,7 @@ def operation_from_dict(
             else None
         ),
         target_preparation=target_preparation,
+        guard=guard,
     )
 
 

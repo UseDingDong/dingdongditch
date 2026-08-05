@@ -40,6 +40,14 @@ class BrowserProfile(str, Enum):
     DEFAULT = "default"
 
 
+def profile_value(profile: BrowserProfile | str) -> str:
+    return profile.value if isinstance(profile, BrowserProfile) else profile
+
+
+def is_persistent_profile(profile: BrowserProfile | str) -> bool:
+    return profile != BrowserProfile.BENCHMARK and profile != BrowserProfile.BENCHMARK.value
+
+
 def dingdong_profile_directory() -> Path:
     """Return the deterministic, isolated persistent profile directory."""
     override = os.environ.get("DINGDONGDITCH_PROFILE_DIR")
@@ -79,6 +87,8 @@ class BrowserFailureKind(str, Enum):
     PAGE_CREATION_FAILED = "page_creation_failed"
     CONTRADICTORY_BROWSER_CONFIG = "contradictory_browser_config"
     PROFILE_IN_USE = "profile_in_use"
+    PROFILE_NOT_FOUND = "profile_not_found"
+    PROFILE_CORRUPT = "profile_corrupt"
 
 
 # Implemented combinations — keep in sync with launch_playwright_browser().
@@ -108,29 +118,30 @@ class BrowserConfig:
     channel: BrowserChannel = BrowserChannel.BUNDLED
     headless: bool = True
     download_policy: DownloadPolicy = DownloadPolicy()
-    profile: BrowserProfile = BrowserProfile.BENCHMARK
+    profile: BrowserProfile | str = BrowserProfile.BENCHMARK
 
     def describe(self) -> dict[str, Any]:
-        persistent = self.profile != BrowserProfile.BENCHMARK
+        persistent = is_persistent_profile(self.profile)
+        selected_profile = profile_value(self.profile)
         return {
             "provider": self.provider.value,
             "engine": self.engine.value,
             "channel": self.channel.value,
             "headless": self.headless,
-            "profile": self.profile.value,
+            "profile": selected_profile,
             "persistent": persistent,
             "profile_isolation": (
                 "fresh_ephemeral_context"
                 if self.profile == BrowserProfile.BENCHMARK
                 else "dedicated_runtime_directory"
-                if self.profile == BrowserProfile.DINGDONG
+                if self.profile != BrowserProfile.DEFAULT
                 else "existing_user_chrome_profile"
             ),
             "authenticated_state_risk": (
                 "none_from_prior_sessions"
                 if self.profile == BrowserProfile.BENCHMARK
                 else "persistent_state_accessible_to_plans"
-                if self.profile == BrowserProfile.DINGDONG
+                if self.profile != BrowserProfile.DEFAULT
                 else "existing_authenticated_user_state_accessible_to_plans"
             ),
             "security_warning": (
@@ -167,14 +178,17 @@ class BrowserConfig:
                 "headless must be a bool",
                 failure_kind=BrowserFailureKind.CONTRADICTORY_BROWSER_CONFIG,
             )
-        if not isinstance(self.profile, BrowserProfile):
+        if not isinstance(self.profile, (BrowserProfile, str)) or not profile_value(self.profile):
+            raise BrowserConfigError("profile must be a non-empty name", failure_kind=BrowserFailureKind.CONTRADICTORY_BROWSER_CONFIG)
+        if isinstance(self.profile, str) and self.profile not in {p.value for p in BrowserProfile}:
+            from dingdongditch.authentication.profiles import validate_profile_name
+            try:
+                validate_profile_name(self.profile)
+            except Exception as exc:
+                raise BrowserConfigError(str(exc), failure_kind=BrowserFailureKind.CONTRADICTORY_BROWSER_CONFIG) from exc
+        if is_persistent_profile(self.profile) and self.engine != BrowserEngine.CHROMIUM:
             raise BrowserConfigError(
-                f"unknown browser profile: {self.profile!r}",
-                failure_kind=BrowserFailureKind.CONTRADICTORY_BROWSER_CONFIG,
-            )
-        if self.profile != BrowserProfile.BENCHMARK and self.engine != BrowserEngine.CHROMIUM:
-            raise BrowserConfigError(
-                f"profile={self.profile.value} requires engine=chromium",
+                f"profile={profile_value(self.profile)} requires engine=chromium",
                 failure_kind=BrowserFailureKind.UNSUPPORTED_ENGINE_CHANNEL_COMBINATION,
             )
         if self.profile == BrowserProfile.DEFAULT and default_chrome_user_data_directory() is None:

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Consent fixture</title></head>
+<body>
+  <main><h1>Deterministic consent fixture</h1></main>
+  <script>
+    if (!document.cookie.split('; ').includes('ddd_consent=accepted')) {
+      const banner = document.createElement('section');
+      banner.id = 'consent-banner';
+      const button = document.createElement('button');
+      button.id = 'accept-consent';
+      button.textContent = 'Accept';
+      button.addEventListener('click', () => {
+        document.cookie = 'ddd_consent=accepted; Path=/; Max-Age=31536000; SameSite=Lax';
+        banner.remove();
+      });
+      banner.appendChild(button);
+      document.body.appendChild(banner);
+    }
+  </script>
+</body>
+</html>

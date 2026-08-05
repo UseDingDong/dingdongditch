@@ -29,6 +29,8 @@ from dingdongditch.contract.operation import (
     Locator,
     LocatorStrategy,
     Operation,
+    OperationGuard,
+    TargetAbsentGuard,
     SelectMode,
 )
 from dingdongditch.contract.page_precondition import (
@@ -117,10 +119,17 @@ from dingdongditch.continuity import (
     TerminalClassification,
     TransportKind,
 )
+from dingdongditch.authentication import (
+    AuthEvent, AuthEventType, AuthenticationCallbacks, AuthenticationCapability,
+    AuthenticationError, AuthenticationFailureKind, MappingSecretProvider,
+    ProfileInfo, ProfileManager, SecretProvider, SecretValue, redact,
+)
 
 __all__ = [
     "__version__",
     "Operation",
+    "OperationGuard",
+    "TargetAbsentGuard",
     "Action",
     "ActionType",
     "KeyPressScope",
@@ -167,6 +176,10 @@ __all__ = [
     "BrowserChannel",
     "BrowserProfile",
     "default_browser_config",
+    "AuthEvent", "AuthEventType", "AuthenticationCallbacks",
+    "AuthenticationCapability", "AuthenticationError", "AuthenticationFailureKind",
+    "MappingSecretProvider", "ProfileInfo", "ProfileManager", "SecretProvider",
+    "SecretValue", "redact",
     "PlanBuilder",
     "inspect_target",
     "list_dialog_history",

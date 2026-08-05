@@ -37,7 +37,10 @@ from dingdongditch.contract.browser import (
     default_browser_config,
     default_chrome_user_data_directory,
     dingdong_profile_directory,
+    is_persistent_profile,
+    profile_value,
 )
+from dingdongditch.authentication import AuthenticationCapability, AuthenticationError
 from dingdongditch.contract.operation import (
     ActionType,
     KeyPressScope,
@@ -172,7 +175,7 @@ def launch_playwright_browser(playwright: Playwright, config: BrowserConfig) -> 
 
 
 def launch_playwright_persistent_context(
-    playwright: Playwright, config: BrowserConfig
+    playwright: Playwright, config: BrowserConfig, *, user_data_dir: Path | None = None
 ) -> BrowserContext:
     """Launch the Chromium persistent context selected by ``config.profile``."""
     if config.profile == BrowserProfile.DINGDONG:
@@ -195,8 +198,14 @@ def launch_playwright_persistent_context(
             headless=config.headless,
             accept_downloads=True,
         )
+    if isinstance(config.profile, str) and config.profile not in {p.value for p in BrowserProfile}:
+        if user_data_dir is None:
+            raise BrowserConfigError("named profile directory was not prepared", failure_kind=BrowserFailureKind.BROWSER_CONTEXT_CREATION_FAILED)
+        return playwright.chromium.launch_persistent_context(
+            str(user_data_dir), headless=config.headless, accept_downloads=True
+        )
     raise BrowserConfigError(
-        f"profile={config.profile.value} is not persistent",
+        f"profile={profile_value(config.profile)} is not persistent",
         failure_kind=BrowserFailureKind.BROWSER_CONTEXT_CREATION_FAILED,
     )
 
@@ -271,6 +280,7 @@ class PlaywrightBackend:
         *,
         headless: bool | None = None,
         trusted_download_config: TrustedDownloadConfig | None = None,
+        authentication: AuthenticationCapability | None = None,
     ) -> None:
         if browser_config is None:
             browser_config = default_browser_config(
@@ -320,6 +330,8 @@ class PlaywrightBackend:
         self._ownership_depth = 0
         self._ownership_scope: str | None = None
         self._profile_lease: FileLease | None = None
+        self.authentication = authentication or AuthenticationCapability()
+        self._profile_data_dir: Path | None = None
         self._generation = 0
         self.observation_store_root = Path(
             self.trusted_download_config.artifact_root
@@ -397,6 +409,8 @@ class PlaywrightBackend:
             "engine": self.browser_config.engine.value,
             "channel": self.browser_config.channel.value,
             "headless": self.browser_config.headless,
+            "profile": profile_value(self.browser_config.profile),
+            "persistent": is_persistent_profile(self.browser_config.profile),
             "download_policy": self.browser_config.download_policy.describe(),
             "backend_identity": self.backend_identity,
             "browser_version": self.browser_version,
@@ -510,7 +524,23 @@ class PlaywrightBackend:
 
         self.browser_config.validate()
         self._prepare_new_generation()
-        if self.browser_config.profile != BrowserProfile.BENCHMARK:
+        named_profile = isinstance(self.browser_config.profile, str) and self.browser_config.profile not in {p.value for p in BrowserProfile}
+        if named_profile:
+            try:
+                self._profile_data_dir = self.authentication.acquire_profile(self.browser_config.profile)
+            except AuthenticationError as exc:
+                profile_failures = {
+                    "profile_in_use": BrowserFailureKind.PROFILE_IN_USE,
+                    "profile_not_found": BrowserFailureKind.PROFILE_NOT_FOUND,
+                    "profile_corrupt": BrowserFailureKind.PROFILE_CORRUPT,
+                }
+                raise BrowserConfigError(
+                    str(exc),
+                    failure_kind=profile_failures.get(
+                        exc.kind.value, BrowserFailureKind.BROWSER_LAUNCH_FAILED
+                    ),
+                ) from exc
+        elif is_persistent_profile(self.browser_config.profile):
             profile_dir = (
                 dingdong_profile_directory()
                 if self.browser_config.profile == BrowserProfile.DINGDONG
@@ -552,7 +582,7 @@ class PlaywrightBackend:
                 self._event("browser_launched_at")
             else:
                 self._context = launch_playwright_persistent_context(
-                    self._playwright, self.browser_config
+                    self._playwright, self.browser_config, user_data_dir=self._profile_data_dir
                 )
                 self._browser = self._context.browser
                 self.browser_version = getattr(self._browser, "version", None)
@@ -582,6 +612,8 @@ class PlaywrightBackend:
                 if self._context.pages
                 else self._context.new_page()
             )
+            self.authentication.bind_context(self._context)
+            self.authentication.verify_ready(self._page)
             self._event("page_created_at")
             self._network = []
 
@@ -635,6 +667,7 @@ class PlaywrightBackend:
             and self._browser is None
             and self._context is None
             and self._profile_lease is None
+            and self._profile_data_dir is None
         ):
             return
         self.lifecycle_state = LifecycleState.STOPPING
@@ -698,6 +731,11 @@ class PlaywrightBackend:
                     f"profile_lease_close:{type(exc).__name__}: {exc}"
                 )
             self._profile_lease = None
+        try:
+            self.authentication.close()
+        except Exception as exc:
+            self.cleanup_errors.append(f"authentication_close:{type(exc).__name__}")
+        self._profile_data_dir = None
         self.lifecycle_state = (
             LifecycleState.FAILED if self.cleanup_errors else LifecycleState.STOPPED
         )
@@ -1039,6 +1077,24 @@ class PlaywrightBackend:
         )
         resolved.trace = merge_frame_trace(framed.trace, resolved.trace)
         return resolved
+
+    def probe_guarded_action_target(self, operation: Operation) -> ResolvedTarget:
+        """Resolve a guard target within the authored locate window, without dispatch."""
+        if operation.guard is None or operation.action.locator is None:
+            raise ValueError("guard probe requires an explicitly guarded target action")
+        deadline = monotonic_ms() + operation.locate_retry_ms
+        while True:
+            resolved = self._resolve_scoped_target(
+                operation.action.locator,
+                frame=operation.action.frame,
+                cardinality=operation.cardinality,
+            )
+            clean_zero = resolved.match_count == 0 and resolved.failure_kind in {
+                "zero_after_primary", "zero_after_constraints"
+            }
+            if not clean_zero or monotonic_ms() >= deadline:
+                return resolved
+            self.page.wait_for_timeout(min(50, max(1, deadline - monotonic_ms())))
 
     def _element_in_viewport(self, loc: Any) -> bool | None:
         try:

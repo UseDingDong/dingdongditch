@@ -550,6 +550,37 @@ class TargetPreparation:
         }
 
 
+@dataclass(frozen=True)
+class TargetAbsentGuard:
+    """Explicit proof required when a guarded action target is absent."""
+
+    expectations: tuple[Any, ...]
+
+    def validate(self) -> None:
+        if not self.expectations:
+            raise ValueError("guard.when_target_absent.expectations must not be empty")
+        for expectation in self.expectations:
+            expectation.validate()
+
+    def describe(self) -> dict[str, Any]:
+        return {"expectations": [item.describe() for item in self.expectations]}
+
+
+@dataclass(frozen=True)
+class OperationGuard:
+    """Narrow guard: execute when target exists, otherwise prove desired state."""
+
+    when_target_absent: TargetAbsentGuard
+
+    def validate(self) -> None:
+        if not isinstance(self.when_target_absent, TargetAbsentGuard):
+            raise ValueError("guard.when_target_absent is required")
+        self.when_target_absent.validate()
+
+    def describe(self) -> dict[str, Any]:
+        return {"when_target_absent": self.when_target_absent.describe()}
+
+
 @dataclass
 class Operation:
     """Externally planned single browser operation."""
@@ -568,6 +599,7 @@ class Operation:
     screenshot_config: Any | None = None
     page_precondition: Any | None = None
     target_preparation: TargetPreparation = field(default_factory=TargetPreparation)
+    guard: OperationGuard | None = None
 
     def validate(self) -> None:
         if not self.operation_id:
@@ -605,6 +637,12 @@ class Operation:
         self.freshness.validate()
         self.target_preparation.validate()
         self.action.validate()
+        if self.guard is not None:
+            if not isinstance(self.guard, OperationGuard):
+                raise ValueError("guard must be an OperationGuard")
+            if self.action.locator is None or self.action.type not in TARGET_BASED_ACTIONS:
+                raise ValueError("guard is supported only for target-based actions")
+            self.guard.validate()
         from dingdongditch.contract.page import PageTransition, PageTransitionPolicy
 
         transition = self.page_transition or PageTransition()
@@ -663,4 +701,5 @@ class Operation:
                 else None
             ),
             "target_preparation": self.target_preparation.describe(),
+            "guard": self.guard.describe() if self.guard is not None else None,
         }

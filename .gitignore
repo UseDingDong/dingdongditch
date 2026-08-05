@@ -70,6 +70,7 @@ test-results/
 blob-report/
 
 # Browser profiles and session state
+.runtime_profiles/
 .auth/
 auth-state/
 browser-data/
@@ -79,6 +80,25 @@ chrome-profile/
 playwright/.auth/
 storage-state*.json
 cookies*.json
+
+# Root-level runtime validation evidence
+/fresh-session.json
+/continuous_multisite*_done.json
+/continuous_multisite*_receipts.json
+/five_minute_continuous_receipts_*.json
+/five_minute_continuous_summary_*.json
+/gemini_conversation_receipts.json
+/gemini_conversation_summary.json
+/gemini_monkeytype_github_diagnostics/
+/gemini_monkeytype_github_postrun_verification.json
+/gemini_monkeytype_github_receipts*.json
+/gemini_monkeytype_github_summary*.json
+/ten_minute_activity_log_*.json
+/ten_minute_continuous_receipts_*.json
+/ten_minute_continuous_summary_*.json
+/ten_minute_final_execution_report_*.json
+/ten_minute_postrun_verification_*.json
+/ten_minute_website_log_*.json
 
 # Runtime output and local evidence
 artifacts/

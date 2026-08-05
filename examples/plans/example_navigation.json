@@ -1,0 +1,20 @@
+{
+  "browser": {
+    "provider": "playwright",
+    "engine": "chromium",
+    "channel": "bundled",
+    "headless": true
+  },
+  "plan": {
+    "plan_id": "example",
+    "failure_policy": "stop_on_failure",
+    "operations": [
+      {
+        "operation_id": "nav",
+        "url": "https://example.com",
+        "action": { "type": "navigate" },
+        "expectations": []
+      }
+    ]
+  }
+}

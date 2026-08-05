@@ -1,238 +1,229 @@
 # DingDongDitch
 
-Open-source **browser execution infrastructure**: a plan-consuming runtime that
-validates typed `ExecutionPlan` documents, drives a shared Playwright backend,
-observes the page, and returns **attested receipts**.
+DingDongDitch is a deterministic browser execution runtime for browser
+automation and AI applications. Developers author explicit `ExecutionPlan`
+documents; DingDongDitch validates them, executes bounded browser operations,
+checks declared expectations, and returns structured receipts. It is not an AI
+agent and does not invent workflows.
 
-It is **not** an AI assistant, built-in planner, autonomous website explorer,
-workflow authoring system, browser, or Playwright replacement.
+## Why DingDongDitch?
 
-## Durable continuity (optional)
+- Deterministic, ordered browser execution
+- Explicit verification instead of inferred success
+- Structured, immutable execution receipts
+- Named persistent browser profiles and session transfer
+- Model-neutral contracts for developer tools and AI applications
+- Fail-closed target resolution with no silent locator healing
 
-`ContinuitySession` is a thin host-side control-state journal above the
-execution runtime. It records host-authorized browser commands, leased browser
-binding metadata, and integrity-checked references to already-published
-DingDongDitch receipts. It does not execute commands, choose next actions,
-retry unknown outcomes, or persist browser-local objects.
+## Quick Start
 
-Its command lifecycle is `proposed -> authorized -> dispatched`, followed by
-`verified`, `failed`, or `outcome_unknown`; cancellation is allowed only before
-dispatch. Reopening a session after an unconfirmed dispatch records
-`outcome_unknown` and never replays the command. The reasoning host remains
-responsible for every subsequent decision.
-
-## Architecture boundary
-
-```text
-Developer code / Cursor / CI / test framework / custom Python host
-                         ↓
-               authors ExecutionPlan
-                         ↓
-                   DingDongDitch
-        validates, executes, observes, receipts
-```
-
-| Role | Responsibility |
-|------|----------------|
-| **Host** | Project-specific intent: URLs, locators, actions, waits, expectations |
-| **DingDongDitch** | Fail-closed validation, ordered execution, observation, receipts |
-
-The host may be a small Python script, a JSON file, Cursor, a test harness, or
-another application. DingDongDitch does **not** infer user intent, invent
-workflows, choose products/forms/links, study arbitrary sites, or replace
-developer-written host code.
-
-## Before changing architecture or expanding scope
-
-Review:
-
-1. [`Engineering/ENGINEERING_PRINCIPLES.md`](./Engineering/ENGINEERING_PRINCIPLES.md)  
-2. [`Engineering/NON_GOALS.md`](./Engineering/NON_GOALS.md)  
-3. [`Engineering/Phase 2/PHASE_2A_RECOMMENDATION.md`](./Engineering/Phase%202/PHASE_2A_RECOMMENDATION.md)  
-4. [`Engineering/Phase 2/RESPONSIBILITY_BOUNDARIES.md`](./Engineering/Phase%202/RESPONSIBILITY_BOUNDARIES.md)  
-5. [`Engineering/Phase 2/SUCCESS_SEMANTICS.md`](./Engineering/Phase%202/SUCCESS_SEMANTICS.md)  
-6. [`Research/RECONNAISSANCE_REPORT.md`](./Research/RECONNAISSANCE_REPORT.md)  
-7. [`Research/Lessons Learned/`](./Research/Lessons%20Learned/)  
-
-## Repository map
-
-| Path | Contents |
-|------|----------|
-| [`dingdongditch/`](./dingdongditch/) | Runtime package (contracts, executor, CLI) |
-| [`tests/`](./tests/) | Unit + Playwright e2e tests |
-| [`examples/`](./examples/) | Infrastructure-neutral demos (local fixture) |
-| [`Engineering/`](./Engineering/README.md) | Principles, non-goals, Phase 2–3 docs |
-| [`Research/`](./Research/README.md) | Phase 1 reconnaissance archive |
-
-## Current implementation
-
-Attested **ordered plan** execution (and standalone operations) via
-Playwright-bundled **Chromium**, **Firefox**, and **WebKit**. Host-declared
-actions:
-
-`navigate`, `fill`, `click`, `press_key`, `select_option`, `set_checked`,
-`hover`, `scroll_to_target`, `wait_for`, `download`.
-
-### Guarded interaction sessions
-
-`TypingSession` is the first session-level primitive. It retains one active
-backend, acquires a declared focus target with the ordinary `click` action,
-verifies focus, and types through ordinary `press_key` dispatches. The complete
-standalone-operation lifecycle runs at session boundaries rather than once per
-character; each key still receives a lightweight evidence/recovery receipt. It repeats
-the focus check at a host-configured character interval and stops before the
-next key if the page or target is no longer safe.
-
-Two generic focus policies are available: strict `target_focused` for editable
-controls, and `page_focused_target_visible` for pages that intentionally handle
-keyboard input outside a focused form control. The structured result includes
-lifecycle checkpoints and every child operation receipt. The shared managed
-session phases (`acquire`, `verify`, `perform`, `finish`) are reusable by future
-drag, scroll, upload, and playback sessions without changing `TypingSession`.
-
-Optional **`frame`** scopes element actions/waits/expectations to one unique
-same-page iframe (one level; no auto-search; no main-document fallback).
-
-Plans may declare `initial_plan_timeout_ms`, `adaptive_timeout_enabled`, and
-`max_plan_timeout_ms`. Adaptive extension is **video_ended-only**, from
-observed HTML5 media facts, and never exceeds the declared ceiling. Ordinary
-action timeouts are not inflated by a longer plan deadline.
-`select_option` accepts scalar `option_value` / `option_label` or multi
-`option_values` for `<select multiple>`.
-
-### Browser profiles
-
-Select session state through the public `BrowserConfig` API:
-
-```python
-from dingdongditch import BrowserConfig, BrowserProfile
-
-config = BrowserConfig(profile=BrowserProfile.DINGDONG)
-```
-
-`benchmark` (the default) creates a fresh temporary context, `dingdong` uses
-one isolated persistent Chromium user-data directory across executions, and
-`default` optionally opens the existing Chrome `Default` profile when it can
-be found. JSON plans accept the equivalent `"profile": "benchmark"`,
-`"dingdong"`, or `"default"` browser field. Set
-`DINGDONGDITCH_PROFILE_DIR` to explicitly relocate the isolated `dingdong`
-profile.
-
-> **Security warning:** persistent profiles are state containers, not security
-> sandboxes. `dingdong` retains cookies and browser-local state between runs.
-> `default` gives plans access to the existing Chrome Default profile, including
-> authenticated sessions. The profile lease prevents concurrent DingDongDitch
-> use only; it does not isolate a plan from that profile's data or permissions.
-> Use the default `benchmark` profile unless persistent state is explicitly
-> required and the plan is trusted.
-
-- Adaptive timing: [`Engineering/Phase 3/ADAPTIVE_PLAN_TIMING.md`](./Engineering/Phase%203/ADAPTIVE_PLAN_TIMING.md)  
-- Iframes: [`Engineering/Phase 3/IFRAME_TARGETING.md`](./Engineering/Phase%203/IFRAME_TARGETING.md)  
-- Plan-runner CLI: [`Engineering/Phase 3/PLAN_RUNNER_CLI.md`](./Engineering/Phase%203/PLAN_RUNNER_CLI.md)  
-- Declared waits: [`Engineering/Phase 3/DECLARED_WAIT_CONDITIONS.md`](./Engineering/Phase%203/DECLARED_WAIT_CONDITIONS.md)  
-- WebKit: [`Engineering/Phase 3/WEBKIT_COMPATIBILITY_MILESTONE.md`](./Engineering/Phase%203/WEBKIT_COMPATIBILITY_MILESTONE.md)  
-- Basic interactions: [`Engineering/Phase 3/BASIC_INTERACTION_EXPANSION.md`](./Engineering/Phase%203/BASIC_INTERACTION_EXPANSION.md)  
-- Firefox: [`Engineering/Phase 3/FIREFOX_COMPATIBILITY_MILESTONE.md`](./Engineering/Phase%203/FIREFOX_COMPATIBILITY_MILESTONE.md)  
-- Stabilization: [`Engineering/Phase 3/MILESTONE_2_CHROMIUM_STABILIZATION.md`](./Engineering/Phase%203/MILESTONE_2_CHROMIUM_STABILIZATION.md)  
-- Milestone 2: [`Engineering/Phase 3/MILESTONE_2_NATIVE_ORDERED_PLANS.md`](./Engineering/Phase%203/MILESTONE_2_NATIVE_ORDERED_PLANS.md)  
-- Milestone 1 notes: [`Engineering/Phase 3/MILESTONE_1_IMPLEMENTATION_NOTES.md`](./Engineering/Phase%203/MILESTONE_1_IMPLEMENTATION_NOTES.md)  
-- Limitations: [`Engineering/Phase 3/MILESTONE_1_LIMITATIONS.md`](./Engineering/Phase%203/MILESTONE_1_LIMITATIONS.md)  
-- Target hardening: [`Engineering/Phase 3/MILESTONE_1_TARGET_RESOLUTION_HARDENING.md`](./Engineering/Phase%203/MILESTONE_1_TARGET_RESOLUTION_HARDENING.md)  
-- Browser boundary: [`Engineering/Phase 3/BROWSER_BOUNDARY_HARDENING.md`](./Engineering/Phase%203/BROWSER_BOUNDARY_HARDENING.md)  
-
-**Browser truth:** Playwright-bundled Chromium, Firefox, and WebKit only.
-Native Safari and Chrome/Edge/Brave channels remain unsupported.
-
-`wait_for` observes one declared condition with a bounded timeout. It is not an
-arbitrary sleep, retry, or recovery mechanism. Supported waits include
-`video_ended` for HTML5 `<video>` in the main document or a declared frame
-document. Third-party embed players, native media-control chrome, popups/new
-tabs, uploads, and nested iframe paths remain unsupported / later milestones.
-
-### Downloads
-
-`download` is a first-class action whose success is based on the browser
-download event and completed file, never on trigger success alone. The
-session-level `BrowserConfig.download_policy` owns the trusted artifact root.
-Actions may choose only a validated relative subdirectory and filename.
-
-Completed artifacts use:
-
-```text
-<artifact_root>/downloads/<browser-session-id>/
-    staging/
-    completed/
-```
-
-The runtime arms event and page monitoring before the declared click/key
-trigger, correlates exactly one event to the operation, saves into staging,
-enforces filename/path, size, extension, MIME, collision and page-effect
-policies, calculates the requested checksum, and atomically commits the file.
-Completed files survive ordinary browser cleanup. DingDongDitch never opens,
-executes, extracts, previews, or otherwise activates downloaded content.
-
-### Permanent execution interfaces
+Requires Python 3.11 or newer.
 
 ```bash
-python -m dingdongditch run-plan path/to/plan.json
-python -m dingdongditch run-plan -
+git clone <repository-url>
+cd DINGDONGDITCH
+python -m pip install -e .
+python -m playwright install chromium
+python -m dingdongditch profile create demo
+python -m dingdongditch run examples/plans/example_navigation_verified.json --profile demo --headed
 ```
 
-The CLI only **loads and executes** already-authored plans (file or stdin).
-It does not author, heal, or reinterpret them.
+Chromium opens `https://example.com`, verifies the final URL and visible page
+text, writes a concise result to the terminal, closes cleanly, and preserves the
+named profile for later runs.
 
-### Explicit navigation and shared sessions
-
-Only a `navigate` operation may intentionally load a document. For every other
-operation, `url` is a page-identity precondition. A different fragment on the
-same scheme/host/path/query is accepted; a different document fails closed with
-`page_precondition_mismatch` before dispatch. Hosts that previously relied on a
-standalone click/fill operation to open its URL must add an explicit navigate
-step and execute both operations in one plan or active shared backend.
-
-When a host supplies a `PlaywrightBackend`, its complete `BrowserConfig` must
-equal the plan configuration. A mismatch is rejected without starting,
-stopping, or mutating the host-owned session.
-
-`PlanBuilder` is available to reduce typed-plan boilerplate without choosing
-workflow details. `inspect_target(backend, locator)` provides read-only target
-diagnostics for an already active host-owned session; it never navigates or
-dispatches an action.
-
-Declared HTML5 media waits include `video_ended`, `video_playing`, and
-`video_completed_once`. The latter requires trustworthy progression and, for
-looping media, a near-end-to-start wrap on the same video element and source.
-
-### Quick start
+Remove the example profile when finished:
 
 ```bash
-pip install -e ".[dev]"
+python -m dingdongditch profile remove demo
+```
+
+Install all bundled browser engines and development dependencies with:
+
+```bash
+python -m pip install -e ".[dev]"
 python -m playwright install chromium firefox webkit
-python -m pytest tests -v
-python -m dingdongditch run-plan examples/plans/basic_navigation.json
-python -m dingdongditch run-plan examples/plans/iframe_targeting.json
-python -m dingdongditch run-plan examples/plans/basic_navigation.json --engine firefox
-python -m dingdongditch run-plan examples/plans/basic_navigation.json --engine webkit
-Get-Content examples/plans/basic_navigation.json | python -m dingdongditch run-plan -
-python examples/host_execution_plan.py
-python examples/single_operation.py
-python examples/ordered_plan_demo.py
-python examples/ordered_plan_demo.py --engine firefox
-python examples/ordered_plan_demo.py --engine webkit
-python examples/basic_interactions_demo.py
-python examples/declared_wait_conditions_demo.py
-python examples/browser_config_demo.py --engine webkit
 ```
 
-DingDongDitch is pre-1.0 alpha software. Public contracts may change between
-minor releases; review the changelog when upgrading.
+## Example
 
-## Community and project policies
+The canonical verified plan is
+[`examples/plans/example_navigation_verified.json`](./examples/plans/example_navigation_verified.json):
 
-- [Contributing](./CONTRIBUTING.md)
-- [Support](./SUPPORT.md)
-- [Security policy](./SECURITY.md)
-- [Governance](./GOVERNANCE.md)
-- [Code of Conduct](./CODE_OF_CONDUCT.md)
-- [Changelog](./CHANGELOG.md)
-- [MIT License](./LICENSE)
+```json
+{
+  "browser": {
+    "provider": "playwright",
+    "engine": "chromium",
+    "channel": "bundled",
+    "headless": false
+  },
+  "plan": {
+    "plan_id": "example",
+    "failure_policy": "stop_on_failure",
+    "operations": [
+      {
+        "operation_id": "nav",
+        "url": "https://example.com",
+        "action": { "type": "navigate" },
+        "expectations": [
+          {
+            "type": "url",
+            "url_value": "https://example.com/",
+            "url_match": "exact"
+          },
+          {
+            "type": "text",
+            "locator": { "strategy": "exact_text", "value": "Example Domain" },
+            "text_value": "Example Domain",
+            "text_match": "contains"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The CLI consumes authored plans from a file or standard input. It never authors,
+heals, or reinterprets them.
+
+## Core Capabilities
+
+- Ordered plans and standalone operations with bounded timeouts
+- Explicit URL, DOM, text, attribute, network, and page-state expectations
+- `VERIFIED`, `NOT_VERIFIED`, `INDETERMINATE`, and `EXECUTION_FAILED` receipts
+- Bundled Chromium, Firefox, and WebKit in headed or headless mode
+- Named profiles with automatic startup, readiness checks, exclusive locks, and clean shutdown
+- Persistent Chromium sessions with cookie and origin-local-storage state
+- Session export, import, validation, and clear commands
+- Explicit guarded optional target actions
+- Runtime-only secret injection and generic authentication callbacks
+- Declared waits, one-level iframe targeting, downloads, native dialogs, and tab/page operations
+- Read-only target and page inspection for active host-owned sessions
+
+## Guarded Optional Actions
+
+A guarded action expresses one narrow conditional explicitly:
+
+- If the declared target exists, dispatch the action and verify its normal expectations.
+- If the target is conclusively absent, dispatch nothing and verify the declared already-satisfied state.
+
+```json
+"guard": {
+  "when_target_absent": {
+    "expectations": [
+      {
+        "type": "element_exists",
+        "locator": { "strategy": "css", "value": "#consent-banner" },
+        "exists": false
+      }
+    ]
+  }
+}
+```
+
+Only a clean zero-match result selects the absent branch. Ambiguous targets,
+backend errors, action failures, and failed postconditions remain failures.
+Unguarded actions retain strict missing-target behavior.
+
+## Authentication & Sessions
+
+Named profiles are application-managed browser state containers:
+
+```bash
+python -m dingdongditch profile create work
+python -m dingdongditch profile list
+python -m dingdongditch session export work session.json
+python -m dingdongditch session clear work
+python -m dingdongditch session import work session.json
+python -m dingdongditch profile remove work
+```
+
+Session files contain validated cookies and origin local storage. They are
+sensitive application artifacts and are not encrypted credential vaults.
+
+Applications may provide a `SecretProvider` for short-lived browser injection
+and register generic callbacks for authentication-required, OTP, TOTP, passkey,
+and WebAuthn requests. DingDongDitch executes explicitly authored browser
+operations; it does not store credentials or implement website-specific login
+flows.
+
+## Receipts
+
+Every operation and plan produces browser-observable evidence and a structured
+verdict:
+
+- `VERIFIED`: every required expectation passed with fresh evidence.
+- `NOT_VERIFIED`: execution completed, but a declared expectation failed.
+- `INDETERMINATE`: the runtime could not make a justified success or failure claim.
+- `EXECUTION_FAILED`: validation, setup, resolution, or action dispatch failed.
+
+```json
+{
+  "plan_id": "example",
+  "plan_verdict": "VERIFIED",
+  "completion_status": "completed",
+  "declared_step_count": 1,
+  "verified_step_count": 1
+}
+```
+
+Receipts include step results, lifecycle identifiers, target-resolution traces,
+expectation evidence, timing, cleanup state, and guarded-branch selection where
+applicable. Receipt success describes browser-observable facts, not external
+world truth.
+
+## Project Philosophy
+
+- Deterministic: the host authors every operation and expected outcome.
+- Explicit: URLs, targets, actions, guards, waits, and verification are declared.
+- Fail-closed: malformed, ambiguous, stale, or unsupported inputs do not dispatch.
+- Bounded: timeouts and retry windows are finite and authored.
+- Model-neutral: no model or AI provider owns the execution contract.
+- Observable: success requires evidence, not merely a successful tool call.
+- Non-autonomous: no hidden AI decisions, silent locator healing, or invented recovery.
+
+See [Engineering Principles](./Engineering/ENGINEERING_PRINCIPLES.md) and
+[Non-Goals](./Engineering/NON_GOALS.md) for the full architectural boundaries.
+
+## Current Limitations
+
+- Website-specific selectors and behavior belong in plans or host applications.
+- External websites may change and should not be the sole CI validation source.
+- Plans are ordered and stop on failure; general branches, loops, and DAGs are unsupported.
+- Guarded actions cover only explicit target-present/target-absent behavior.
+- Persistent named profiles currently require Chromium.
+- Only Playwright-bundled Chromium, Firefox, and WebKit are generally supported; native Safari is unsupported.
+- Iframe targeting is limited to one declared level with no automatic frame search.
+- Authentication integrations are callback-driven; no website-specific login flows exist.
+- Session transfer covers cookies and origin local storage, not every browser data store.
+- Upload actions and arbitrary JavaScript execution from plans are unsupported.
+
+The repository remains pre-1.0; review the [changelog](./CHANGELOG.md) when
+upgrading between minor versions.
+
+## Roadmap
+
+Future work is kept separate from implemented behavior:
+
+- Application-provided passkey and WebAuthn transports
+- External secret-manager adapters
+- Upload contracts and additional portable browser-state support
+- Nested-frame paths and additional browser capabilities
+- Additional installed browser-channel support where it can remain deterministic
+
+Roadmap items are not part of the current runtime contract.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Please review the
+[engineering principles](./Engineering/ENGINEERING_PRINCIPLES.md) and
+[non-goals](./Engineering/NON_GOALS.md) before proposing architectural changes.
+
+Project policies: [Support](./SUPPORT.md) · [Security](./SECURITY.md) ·
+[Governance](./GOVERNANCE.md) · [Code of Conduct](./CODE_OF_CONDUCT.md)
+
+## License
+
+DingDongDitch is available under the [MIT License](./LICENSE).

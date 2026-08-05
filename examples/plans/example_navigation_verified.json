@@ -1,0 +1,32 @@
+{
+  "browser": {
+    "provider": "playwright",
+    "engine": "chromium",
+    "channel": "bundled",
+    "headless": false
+  },
+  "plan": {
+    "plan_id": "example",
+    "failure_policy": "stop_on_failure",
+    "operations": [
+      {
+        "operation_id": "nav",
+        "url": "https://example.com",
+        "action": { "type": "navigate" },
+        "expectations": [
+          {
+            "type": "url",
+            "url_value": "https://example.com/",
+            "url_match": "exact"
+          },
+          {
+            "type": "text",
+            "locator": { "strategy": "exact_text", "value": "Example Domain" },
+            "text_value": "Example Domain",
+            "text_match": "contains"
+          }
+        ]
+      }
+    ]
+  }
+}

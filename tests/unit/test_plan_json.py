@@ -66,6 +66,68 @@ def test_valid_json_parses_into_execution_plan():
     assert plan.operations[0].url.startswith("file:")
 
 
+def test_guarded_operation_parses_current_expectation_contract():
+    doc = _minimal_doc()
+    operation = doc["plan"]["operations"][0]
+    operation["action"] = {
+        "type": "click",
+        "locator": {"strategy": "css", "value": "#optional"},
+    }
+    operation["expectations"] = [
+        {"type": "element_exists", "locator": {"strategy": "css", "value": "#done"}, "exists": True}
+    ]
+    operation["guard"] = {
+        "when_target_absent": {
+            "expectations": [
+                {"type": "element_exists", "locator": {"strategy": "css", "value": "#done"}, "exists": True}
+            ]
+        }
+    }
+    plan = plan_document_from_dict(doc)
+    assert plan.operations[0].guard is not None
+    assert len(plan.operations[0].guard.when_target_absent.expectations) == 1
+
+
+@pytest.mark.parametrize(
+    "guard",
+    [
+        {},
+        {"when_target_absent": {}},
+        {"when_target_absent": {"expectations": []}},
+        {"when_target_absent": {"expectations": [], "unsupported": True}},
+        {"unsupported": {}},
+    ],
+)
+def test_malformed_guard_is_rejected(guard):
+    doc = _minimal_doc()
+    operation = doc["plan"]["operations"][0]
+    operation["action"] = {
+        "type": "click",
+        "locator": {"strategy": "css", "value": "#optional"},
+    }
+    operation["guard"] = guard
+    with pytest.raises(PlanLoadError):
+        plan_document_from_dict(doc)
+
+
+def test_unguarded_plan_remains_backward_compatible():
+    plan = plan_document_from_dict(_minimal_doc())
+    assert plan.operations[0].guard is None
+
+
+def test_guard_is_rejected_for_non_target_action():
+    doc = _minimal_doc()
+    doc["plan"]["operations"][0]["guard"] = {
+        "when_target_absent": {
+            "expectations": [
+                {"type": "url", "url_value": "https://example.com/"}
+            ]
+        }
+    }
+    with pytest.raises(PlanLoadError, match="target-based"):
+        plan_document_from_dict(doc)
+
+
 def test_unknown_action_fails_before_browser(tmp_path):
     path = tmp_path / "bad.json"
     doc = _minimal_doc()

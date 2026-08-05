@@ -11,6 +11,7 @@ import pytest
 
 from dingdongditch.cli import (
     EXIT_EXECUTION_FAILED,
+    EXIT_INDETERMINATE,
     EXIT_INVALID_INPUT,
     EXIT_NOT_VERIFIED,
     EXIT_SUCCESS,
@@ -21,6 +22,10 @@ from dingdongditch.plan_json import load_plan_file
 
 ROOT = Path(__file__).resolve().parents[2]
 SAMPLE = ROOT / "examples" / "plans" / "basic_navigation.json"
+EXAMPLE_NAVIGATION = ROOT / "examples" / "plans" / "example_navigation.json"
+EXAMPLE_NAVIGATION_VERIFIED = (
+    ROOT / "examples" / "plans" / "example_navigation_verified.json"
+)
 
 
 def _write_plan(tmp_path: Path, *, url: str, **plan_tweaks) -> Path:
@@ -117,6 +122,55 @@ def test_valid_local_fixture_plan_executes(tmp_path, fixture_url, engine):
 def test_sample_basic_navigation_json_executes_chromium():
     code = main(["run-plan", str(SAMPLE), "--engine", "chromium", "--headless"])
     assert code == EXIT_SUCCESS
+
+
+def test_example_navigation_json_executes_with_named_profile(tmp_path, monkeypatch):
+    monkeypatch.setenv("DINGDONGDITCH_PROFILE_ROOT", str(tmp_path / "profiles"))
+    receipt_path = tmp_path / "example-navigation-receipt.json"
+    assert main(["profile", "create", "example-test"]) == EXIT_SUCCESS
+    try:
+        assert main(
+            [
+                "run",
+                str(EXAMPLE_NAVIGATION),
+                "--profile",
+                "example-test",
+                "--output",
+                str(receipt_path),
+            ]
+        ) == EXIT_INDETERMINATE
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        assert receipt["plan_verdict"] == "INDETERMINATE"
+        assert receipt["attempted_step_count"] == 1
+        assert receipt["steps"][0]["receipt"]["action_executed_successfully"] is True
+        assert receipt["steps"][0]["receipt"]["target_url"] == "https://example.com"
+    finally:
+        assert main(["profile", "remove", "example-test"]) == EXIT_SUCCESS
+
+
+def test_verified_example_navigation_executes_with_named_profile(tmp_path, monkeypatch):
+    monkeypatch.setenv("DINGDONGDITCH_PROFILE_ROOT", str(tmp_path / "profiles"))
+    receipt_path = tmp_path / "example-navigation-verified-receipt.json"
+    assert main(["profile", "create", "verified-example-test"]) == EXIT_SUCCESS
+    try:
+        assert main(
+            [
+                "run",
+                str(EXAMPLE_NAVIGATION_VERIFIED),
+                "--profile",
+                "verified-example-test",
+                "--output",
+                str(receipt_path),
+            ]
+        ) == EXIT_SUCCESS
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        assert receipt["plan_verdict"] == "VERIFIED"
+        assert receipt["browser"]["headless"] is False
+        assert receipt["verified_step_count"] == 1
+        expectation_results = receipt["steps"][0]["receipt"]["expectation_results"]
+        assert [result["result"] for result in expectation_results] == ["pass", "pass"]
+    finally:
+        assert main(["profile", "remove", "verified-example-test"]) == EXIT_SUCCESS
 
 
 def test_receipt_output_contains_stable_lifecycle_ids(tmp_path, fixture_url):

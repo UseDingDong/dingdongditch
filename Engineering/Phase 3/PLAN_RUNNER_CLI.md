@@ -82,6 +82,31 @@ A bare `ExecutionPlan` object (`plan_id` + `operations` + optional
 `Locator`, and `ExecutionPlan` models, then calls their `validate()` methods.
 Unknown fields fail closed. There is no CLI-specific action schema.
 
+### Explicit guarded target actions
+
+A target-based action may declare a narrow optional-target guard. The action is
+dispatched normally when its authored locator resolves uniquely. Only a clean
+zero-match result selects `target_absent`, where every explicitly declared guard
+expectation must pass; ambiguity, resolver errors, and dispatch failures never
+select the absent branch.
+
+```json
+"guard": {
+  "when_target_absent": {
+    "expectations": [
+      {
+        "type": "element_exists",
+        "locator": { "strategy": "css", "value": "#desired-state" },
+        "exists": true
+      }
+    ]
+  }
+}
+```
+
+Guard expectations are required and non-empty. Unguarded operations preserve
+the original strict missing-target failure semantics.
+
 Relative operation `url` values that are not `http(s)://`, `file://`, or
 `about:` are resolved against the plan file directory and converted to
 `file://` URIs.
