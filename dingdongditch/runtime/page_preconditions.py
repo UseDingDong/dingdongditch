@@ -133,9 +133,13 @@ def evaluate_page_precondition(
             if condition.type == PageConditionType.ELEMENT_VISIBLE:
                 assert condition.locator is not None
                 try:
-                    state = backend.read_element_state(
-                        condition.locator, frame=condition.frame
-                    )
+                    state_kwargs: dict[str, object] = {"frame": condition.frame}
+                    # Preserve the legacy backend call shape when a condition has
+                    # no declared frame path.  This also keeps older backend
+                    # adapters and their mocks compatible.
+                    if condition.frame_path:
+                        state_kwargs["frame_path"] = condition.frame_path
+                    state = backend.read_element_state(condition.locator, **state_kwargs)
                     availability = SignalAvailability.OBSERVED
                     notes = "element_visible page precondition"
                 except Exception as exc:
@@ -154,6 +158,9 @@ def evaluate_page_precondition(
                             if condition.frame is not None
                             else None
                         ),
+                        "frame_path": [
+                            frame.describe() for frame in condition.frame_path
+                        ],
                         "state": state,
                     },
                     availability=availability,

@@ -125,7 +125,7 @@ def test_webkit_config_and_metadata(fixture_url):
     assert r.browser["engine"] == "webkit"
     assert r.browser["provider"] == "playwright"
     assert r.browser["channel"] == "bundled"
-    assert r.schema_version == "1.7.0"
+    assert r.schema_version == "1.8.0"
     assert "safari_not_supported" in r.limitations
 
 

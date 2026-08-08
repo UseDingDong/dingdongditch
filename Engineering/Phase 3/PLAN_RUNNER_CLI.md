@@ -162,11 +162,11 @@ and [`examples/host_execution_plan.py`](../../examples/host_execution_plan.py).
 - target healing
 - retries / replanning
 - arbitrary sleeps
-- nested iframe paths / auto frame search
+- automatic frame search or main-document fallback
 - popup or new-tab handling
 - dialog handling
 - download handling
-- file uploads
+- programmatic file-chooser trigger uploads and directory uploads
 - native Safari automation
 - universal website compatibility
 - a second executor, verifier, or browser backend
@@ -178,4 +178,6 @@ and [`examples/host_execution_plan.py`](../../examples/host_execution_plan.py).
 runs against the local fixture via relative filesystem path resolution.
 
 [`examples/plans/iframe_targeting.json`](../../examples/plans/iframe_targeting.json)
-demonstrates declared one-level iframe `frame` targeting.
+demonstrates the legacy one-level `frame` form. New plans may use a bounded
+declared `frame_path` for nested same-page frames; see
+[`IFRAME_TARGETING.md`](./IFRAME_TARGETING.md).

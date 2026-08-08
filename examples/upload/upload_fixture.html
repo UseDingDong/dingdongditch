@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>DingDongDitch upload example</title>
+<body>
+  <label>Choose a text file
+    <input data-testid="example-upload" type="file" accept=".txt,text/plain">
+  </label>
+  <output data-testid="upload-result"></output>
+  <script>
+    const input = document.querySelector('[data-testid=example-upload]');
+    input.addEventListener('change', () => {
+      document.querySelector('[data-testid=upload-result]').textContent =
+        Array.from(input.files, file => file.name).join(', ');
+    });
+  </script>
+</body>
+</html>

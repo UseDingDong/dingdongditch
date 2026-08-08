@@ -82,13 +82,13 @@ def test_mandatory_redaction_failure_writes_no_file_and_fails_receipt(tmp_path: 
             _verified_navigation("data:text/html,<button>Safe</button>", config),
             backend=backend,
         )
-        shot = receipt.action_evidence["screenshots"][0]
+        shot = receipt.artifacts[0]
         assert receipt.verdict == Verdict.EXECUTION_FAILED
         assert receipt.failure_kind == "screenshot_redaction_failed"
         assert receipt.execution_status == "evidence_capture_failed"
-        assert shot["captured"] is False
-        assert shot["redaction_status"] == "failed"
-        assert shot["artifact_path"] is None
+        assert shot["status"] == "failed"
+        assert shot["redaction"]["status"] == "failed"
+        assert shot["filename"] is None
         assert list(tmp_path.glob("*.png")) == []
     finally:
         backend.stop()

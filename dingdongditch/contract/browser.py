@@ -48,16 +48,43 @@ def is_persistent_profile(profile: BrowserProfile | str) -> bool:
     return profile != BrowserProfile.BENCHMARK and profile != BrowserProfile.BENCHMARK.value
 
 
-def dingdong_profile_directory() -> Path:
-    """Return the deterministic, isolated persistent profile directory."""
+def dingdong_profile_directory(engine: BrowserEngine = BrowserEngine.CHROMIUM) -> Path:
+    """Return the deterministic, engine-isolated persistent profile directory."""
     override = os.environ.get("DINGDONGDITCH_PROFILE_DIR")
     if override:
-        return Path(override).expanduser().resolve()
+        base = Path(override).expanduser().resolve()
+        return base if engine == BrowserEngine.CHROMIUM else base / engine.value
     if os.name == "nt":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
     else:
         base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
-    return (base / "DingDongDitch" / "browser-profiles" / "dingdong").resolve()
+    root = (base / "DingDongDitch" / "browser-profiles" / "dingdong").resolve()
+    return root if engine == BrowserEngine.CHROMIUM else root / engine.value
+
+
+def persistent_profile_capability(
+    engine: BrowserEngine, profile: BrowserProfile | str
+) -> dict[str, str]:
+    """Honest Playwright persistent-context capability classification."""
+    selected = profile_value(profile)
+    if selected == BrowserProfile.BENCHMARK.value:
+        return {"status": "not_applicable", "reason": "ephemeral_profile"}
+    if selected == BrowserProfile.DEFAULT.value:
+        if engine == BrowserEngine.CHROMIUM:
+            return {
+                "status": "partially_supported",
+                "reason": "existing_chrome_default_profile_only",
+            }
+        return {
+            "status": "unsupported",
+            "reason": "no_safe_existing_user_profile_mapping",
+        }
+    if engine in {BrowserEngine.CHROMIUM, BrowserEngine.FIREFOX, BrowserEngine.WEBKIT}:
+        return {
+            "status": "supported",
+            "reason": "playwright_launch_persistent_context_isolated_directory",
+        }
+    return {"status": "unsupported", "reason": "unknown_engine"}
 
 
 def default_chrome_user_data_directory() -> Path | None:
@@ -154,6 +181,9 @@ class BrowserConfig:
                 )
             ),
             "download_policy": self.download_policy.describe(),
+            "persistent_profile_capability": persistent_profile_capability(
+                self.engine, self.profile
+            ),
         }
 
     def validate(self) -> None:
@@ -186,9 +216,9 @@ class BrowserConfig:
                 validate_profile_name(self.profile)
             except Exception as exc:
                 raise BrowserConfigError(str(exc), failure_kind=BrowserFailureKind.CONTRADICTORY_BROWSER_CONFIG) from exc
-        if is_persistent_profile(self.profile) and self.engine != BrowserEngine.CHROMIUM:
+        if self.profile == BrowserProfile.DEFAULT and self.engine != BrowserEngine.CHROMIUM:
             raise BrowserConfigError(
-                f"profile={profile_value(self.profile)} requires engine=chromium",
+                "profile=default requires engine=chromium",
                 failure_kind=BrowserFailureKind.UNSUPPORTED_ENGINE_CHANNEL_COMBINATION,
             )
         if self.profile == BrowserProfile.DEFAULT and default_chrome_user_data_directory() is None:

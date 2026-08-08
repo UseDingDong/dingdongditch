@@ -44,12 +44,17 @@ class ElementStateSnapshot:
     focused: bool | None = None
     text: str | None = None
     value: str | None = None
+    tag: str | None = None
     role: str | None = None
+    ancestor_tags: tuple[str, ...] = ()
+    child_element_count: int | None = None
     bounding_box: dict[str, float] | None = None
     attributes: dict[str, str | None] = field(default_factory=dict)
     target_resolution: dict[str, Any] | None = None
     collection_mode: str = "atomic"
     error: str | None = None
+    file_names: tuple[str, ...] = ()
+    file_count: int | None = None
 
     def to_legacy_state(self) -> dict[str, Any]:
         """Return the pre-optimization public/evidence dictionary shape."""
@@ -74,9 +79,15 @@ class ElementStateSnapshot:
             "in_viewport": self.in_viewport,
             "checked": self.checked,
             "focused": self.focused,
+            "tag": self.tag,
+            "role": self.role,
+            "ancestor_tags": list(self.ancestor_tags),
+            "child_element_count": self.child_element_count,
             "text": self.text or "",
             "attributes": dict(self.attributes),
             "target_resolution": self.target_resolution,
+            "file_names": list(self.file_names),
+            "file_count": self.file_count,
         }
 
 
@@ -134,6 +145,8 @@ ATOMIC_ELEMENT_SNAPSHOT_JS = """
     || el.hasAttribute("aria-selected");
   const valueBearing =
     tag === "input" || tag === "textarea" || tag === "select";
+  const fileNames = tag === "input" && inputType === "file" && el.files
+    ? Array.from(el.files, file => String(file.name)) : [];
 
   const attributes = {};
   for (const name of attributeNames) {
@@ -156,6 +169,11 @@ ATOMIC_ELEMENT_SNAPSHOT_JS = """
     }
   }
 
+  const ancestorTags = [];
+  for (let parent = el.parentElement; parent && ancestorTags.length < 3; parent = parent.parentElement) {
+    ancestorTags.push((parent.tagName || "").toLowerCase());
+  }
+
   return {
     supported: true,
     connected,
@@ -172,6 +190,9 @@ ATOMIC_ELEMENT_SNAPSHOT_JS = """
     text: visible ? String(el.innerText || "") : String(el.textContent || ""),
     value: valueBearing ? String(el.value) : null,
     role,
+    tag,
+    ancestor_tags: ancestorTags,
+    child_element_count: Math.min(64, el.children ? el.children.length : 0),
     bounding_box: connected ? {
       x: rect.x,
       y: rect.y,
@@ -179,6 +200,8 @@ ATOMIC_ELEMENT_SNAPSHOT_JS = """
       height: rect.height,
     } : null,
     attributes,
+    file_names: fileNames,
+    file_count: fileNames.length,
   };
 }
 """

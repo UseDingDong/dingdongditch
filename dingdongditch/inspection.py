@@ -14,13 +14,18 @@ def inspect_target(
     locator: Locator,
     *,
     frame: Locator | None = None,
+    frame_path: tuple[Locator, ...] = (),
 ) -> dict[str, Any]:
     if not backend.is_started:
         raise RuntimeError("target inspection requires an active host-owned backend")
     locator.validate()
     if frame is not None:
         frame.validate()
-    state = backend.read_element_state(locator, frame=frame)
+    if frame is not None and frame_path:
+        raise ValueError("frame and frame_path are mutually exclusive")
+    for hop in frame_path:
+        hop.validate()
+    state = backend.read_element_state(locator, frame=frame, frame_path=frame_path)
     return {
         "page": {
             "url": backend.page.url,
@@ -28,6 +33,7 @@ def inspect_target(
         },
         "locator": locator.describe(),
         "frame": frame.describe() if frame else None,
+        "frame_path": [hop.describe() for hop in frame_path],
         "match_count": state.get("match_count"),
         "exists": state.get("exists"),
         "ambiguous": state.get("ambiguous", False),

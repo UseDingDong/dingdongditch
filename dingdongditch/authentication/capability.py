@@ -5,18 +5,43 @@ import os
 from pathlib import Path
 import tempfile
 from typing import Any
-from urllib.parse import urlsplit
 
 from dingdongditch.runtime.file_lease import FileLease
 from .callbacks import AuthEvent, AuthenticationCallbacks
 from .errors import AuthenticationError, AuthenticationFailureKind
 from .profiles import ProfileManager
-from .secrets import SecretProvider
+from .secrets import (
+    SecretProvider,
+    SecretReference,
+    SecretResolutionReceipt,
+    resolve_secret,
+)
+from .portable_state import (
+    DEFAULT_PORTABLE_STATE_MAX_AGE_MS,
+    MAX_PORTABLE_STATE_BYTES,
+    PORTABLE_STATE_SCHEMA_VERSION,
+    PortableStatePolicy,
+    PortableStateReceipt,
+    build_portable_state,
+    validate_portable_document,
+)
+from .webauthn import (
+    WebAuthnParticipationReceipt,
+    WebAuthnParticipationRequest,
+    WebAuthnTransport,
+    execute_webauthn_transport,
+)
 
 _SESSION_SCHEMA = 1
 
 
 def validate_session_state(raw: object) -> dict[str, Any]:
+    """Compatibility validation for legacy v1 cookie/localStorage documents.
+
+    New exports use the portable-state v2 document below.  Existing callers
+    retain their old import behavior, while new documents gain timestamps,
+    feature declarations, and explicit IndexedDB boundaries.
+    """
     if not isinstance(raw, dict) or raw.get("schema_version") != _SESSION_SCHEMA:
         raise AuthenticationError("session file has an unsupported or missing schema_version", kind=AuthenticationFailureKind.SESSION_INVALID, recovery="Export a new session with this DingDongDitch version.")
     state = raw.get("storage_state")
@@ -28,8 +53,10 @@ def validate_session_state(raw: object) -> dict[str, Any]:
     for origin in state["origins"]:
         if not isinstance(origin, dict) or not isinstance(origin.get("origin"), str) or not isinstance(origin.get("localStorage"), list):
             raise AuthenticationError("session file contains invalid origin storage", kind=AuthenticationFailureKind.SESSION_INVALID)
-        parsed = urlsplit(origin["origin"])
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        from .portable_state import _safe_origin
+        try:
+            _safe_origin(origin["origin"])
+        except AuthenticationError:
             raise AuthenticationError("session file contains an unsafe storage origin", kind=AuthenticationFailureKind.SESSION_INVALID)
         if any(not isinstance(item, dict) or not isinstance(item.get("name"), str) or not isinstance(item.get("value"), str) for item in origin["localStorage"]):
             raise AuthenticationError("session file contains invalid local storage entries", kind=AuthenticationFailureKind.SESSION_INVALID)
@@ -38,21 +65,43 @@ def validate_session_state(raw: object) -> dict[str, Any]:
 
 class AuthenticationCapability:
     """Sole owner of named profiles, session state, secrets and auth callbacks."""
-    def __init__(self, *, profiles: ProfileManager | None = None, secrets: SecretProvider | None = None, callbacks: AuthenticationCallbacks | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        profiles: ProfileManager | None = None,
+        secrets: SecretProvider | None = None,
+        callbacks: AuthenticationCallbacks | None = None,
+        webauthn_transport: WebAuthnTransport | None = None,
+    ) -> None:
         self.profiles = profiles or ProfileManager()
         self.secrets = secrets
         self.callbacks = callbacks or AuthenticationCallbacks()
+        self.webauthn_transport = webauthn_transport
         self._lease: FileLease | None = None
         self._context: Any = None
         self._profile_name: str | None = None
+        self._pending_portable_state: dict[str, Any] | None = None
+        self._pending_portable_receipt: PortableStateReceipt | None = None
 
-    def acquire_profile(self, name: str) -> Path:
+    def acquire_profile(self, name: str, *, engine: str = "chromium") -> Path:
         if self._lease is not None:
             raise AuthenticationError("authentication capability already owns a profile", kind=AuthenticationFailureKind.PROFILE_IN_USE)
         info = self.profiles.require(name)
         self._lease = self.profiles.acquire(name)
         self._profile_name = name
-        return info.path / "browser-data"
+        if engine not in {"chromium", "firefox", "webkit"}:
+            raise AuthenticationError(
+                "requested browser engine has no persistent-profile mapping",
+                kind=AuthenticationFailureKind.SESSION_UNSUPPORTED,
+            )
+        # Keep Chromium's established on-disk location intact.  Other engines
+        # receive explicit subdirectories; their profile formats are not
+        # interchangeable and are never silently shared.
+        data_dir = info.path / "browser-data"
+        if engine != "chromium":
+            data_dir = data_dir / engine
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
 
     def bind_context(self, context: Any) -> None:
         self._context = context
@@ -65,36 +114,101 @@ class AuthenticationCapability:
         except Exception as exc:
             raise AuthenticationError("browser profile started but did not become ready", kind=AuthenticationFailureKind.NOT_READY, recovery="Retry the run; if it repeats, recreate the profile.") from exc
 
-    def inject(self, locator: Any, secret_name: str) -> None:
-        if self.secrets is None:
-            raise AuthenticationError("no application SecretProvider is configured", kind=AuthenticationFailureKind.SECRET_NOT_FOUND)
-        with self.secrets.get(secret_name) as secret:
+    def inject(
+        self,
+        locator: Any,
+        secret_reference: SecretReference | str,
+        *,
+        timeout_ms: int = 5_000,
+    ) -> SecretResolutionReceipt:
+        """Resolve and fill one secret without retaining or reporting its value."""
+        secret, receipt = resolve_secret(
+            self.secrets, secret_reference, timeout_ms=timeout_ms
+        )
+        with secret:
             try:
                 locator.fill(secret.reveal())
             except Exception as exc:
-                raise AuthenticationError("secret injection browser operation failed", kind=AuthenticationFailureKind.SESSION_IO_ERROR, recovery="Check the target and retry.") from exc
+                raise AuthenticationError(
+                    "secret injection browser operation failed",
+                    kind=AuthenticationFailureKind.SESSION_IO_ERROR,
+                    recovery="Check the target and retry.",
+                ) from exc
+        return receipt
 
     def emit(self, event: AuthEvent) -> list[object]:
         return self.callbacks.emit(event)
 
-    def export_session(self, destination: Path) -> None:
+    def participate_webauthn(
+        self,
+        request: WebAuthnParticipationRequest,
+        *,
+        browser_engine: str,
+        page_origin: str | None,
+    ) -> WebAuthnParticipationReceipt:
+        return execute_webauthn_transport(
+            self.webauthn_transport,
+            request,
+            browser_engine=browser_engine,
+            page_origin=page_origin,
+        )
+
+    def export_session(
+        self,
+        destination: Path,
+        *,
+        policy: PortableStatePolicy | None = None,
+    ) -> PortableStateReceipt:
         context = self._require_context()
+        selected_policy = policy or PortableStatePolicy()
         try:
-            state = context.storage_state()
-            validate_session_state({"schema_version": _SESSION_SCHEMA, "storage_state": state})
-            self._atomic_json(destination.resolve(), {"schema_version": _SESSION_SCHEMA, "storage_state": state})
+            selected_policy.validate()
+            try:
+                state = context.storage_state(indexed_db=selected_policy.include_indexed_db)
+            except TypeError as exc:
+                if selected_policy.include_indexed_db:
+                    raise AuthenticationError(
+                        "this Playwright backend cannot export IndexedDB state",
+                        kind=AuthenticationFailureKind.SESSION_UNSUPPORTED,
+                    ) from exc
+                state = context.storage_state()
+            document, receipt = build_portable_state(state, policy=selected_policy)
+            self._atomic_json(destination.resolve(), document)
+            return receipt
         except AuthenticationError:
             raise
         except Exception as exc:
             raise AuthenticationError("session export failed", kind=AuthenticationFailureKind.SESSION_IO_ERROR, recovery="Check the destination and retry.") from exc
 
-    def import_session(self, source: Path) -> None:
+    def import_session(
+        self,
+        source: Path,
+        *,
+        max_age_ms: int = DEFAULT_PORTABLE_STATE_MAX_AGE_MS,
+    ) -> PortableStateReceipt:
         context = self._require_context()
         try:
-            if source.stat().st_size > 10 * 1024 * 1024:
+            if source.stat().st_size > MAX_PORTABLE_STATE_BYTES:
                 raise AuthenticationError("session file exceeds the 10 MiB safety limit", kind=AuthenticationFailureKind.SESSION_INVALID)
             raw = json.loads(source.read_text(encoding="utf-8"))
-            state = validate_session_state(raw)
+            if raw.get("schema_version") == _SESSION_SCHEMA and "kind" not in raw:
+                # Legacy state remains readable for backward compatibility.
+                state = validate_session_state(raw)
+                receipt = PortableStateReceipt(
+                    schema_version=_SESSION_SCHEMA,
+                    direction="import",
+                    status="completed_legacy",
+                    included_features=("cookies", "local_storage"),
+                    excluded_features=("indexed_db",),
+                    cookie_count=len(state["cookies"]),
+                    origin_count=len(state["origins"]),
+                    limitations=("legacy_state_has_no_staleness_timestamp",),
+                )
+            else:
+                # Existing contexts can safely import cookies/localStorage only.
+                state, receipt = validate_portable_document(
+                    raw, max_age_ms=max_age_ms, allow_indexed_db=False
+                )
             context.clear_cookies()
             if state["cookies"]:
                 context.add_cookies(state["cookies"])
@@ -105,12 +219,48 @@ class AuthenticationCapability:
                     page.evaluate("items => { localStorage.clear(); for (const i of items) localStorage.setItem(i.name, i.value); }", origin["localStorage"])
                 finally:
                     page.close()
+            return receipt
         except AuthenticationError:
             raise
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise AuthenticationError("session file is unreadable or corrupt", kind=AuthenticationFailureKind.SESSION_INVALID, recovery="Use a valid exported session file.") from exc
         except Exception as exc:
             raise AuthenticationError("session import failed safely", kind=AuthenticationFailureKind.SESSION_IO_ERROR, recovery="Clear the profile session and retry.") from exc
+
+    def prepare_session_import(
+        self,
+        source: Path,
+        *,
+        max_age_ms: int = DEFAULT_PORTABLE_STATE_MAX_AGE_MS,
+    ) -> PortableStateReceipt:
+        """Validate state for deterministic injection into a *new* context.
+
+        This is the only path that supports Playwright's IndexedDB storage
+        state.  The browser backend consumes it at new-context construction;
+        a running context is never patched with IndexedDB JavaScript.
+        """
+        try:
+            if source.stat().st_size > MAX_PORTABLE_STATE_BYTES:
+                raise AuthenticationError("session file exceeds the 10 MiB safety limit", kind=AuthenticationFailureKind.SESSION_INVALID)
+            raw = json.loads(source.read_text(encoding="utf-8"))
+            state, receipt = validate_portable_document(
+                raw, max_age_ms=max_age_ms, allow_indexed_db=True
+            )
+            self._pending_portable_state = state
+            self._pending_portable_receipt = receipt
+            return receipt
+        except AuthenticationError:
+            raise
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise AuthenticationError("session file is unreadable or corrupt", kind=AuthenticationFailureKind.SESSION_INVALID) from exc
+
+    def pending_initial_storage_state(self) -> dict[str, Any] | None:
+        """Backend-only read; values never enter plans or receipts."""
+        return self._pending_portable_state
+
+    def confirm_pending_initial_storage_state(self) -> None:
+        self._pending_portable_state = None
+        self._pending_portable_receipt = None
 
     def clear_session(self) -> None:
         context = self._require_context()
@@ -135,6 +285,8 @@ class AuthenticationCapability:
             self._lease.close()
             self._lease = None
         self._profile_name = None
+        self._pending_portable_state = None
+        self._pending_portable_receipt = None
         clear = getattr(self.secrets, "clear", None)
         if clear is not None:
             clear()

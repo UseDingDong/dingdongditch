@@ -1,229 +1,152 @@
 # DingDongDitch
 
-DingDongDitch is a deterministic browser execution runtime for browser
-automation and AI applications. Developers author explicit `ExecutionPlan`
+DingDongDitch is a deterministic browser-execution runtime for browser
+automation and AI applications. A host authors explicit `ExecutionPlan`
 documents; DingDongDitch validates them, executes bounded browser operations,
-checks declared expectations, and returns structured receipts. It is not an AI
-agent and does not invent workflows.
+verifies declared expectations, and returns structured receipts. It is not an
+AI agent and never invents workflows.
 
-## Why DingDongDitch?
-
-- Deterministic, ordered browser execution
-- Explicit verification instead of inferred success
-- Structured, immutable execution receipts
-- Named persistent browser profiles and session transfer
-- Model-neutral contracts for developer tools and AI applications
-- Fail-closed target resolution with no silent locator healing
-
-## Quick Start
+## Quick start
 
 Requires Python 3.11 or newer.
 
 ```bash
 git clone <repository-url>
 cd DINGDONGDITCH
-python -m pip install -e .
-python -m playwright install chromium
-python -m dingdongditch profile create demo
-python -m dingdongditch run examples/plans/example_navigation_verified.json --profile demo --headed
-```
-
-Chromium opens `https://example.com`, verifies the final URL and visible page
-text, writes a concise result to the terminal, closes cleanly, and preserves the
-named profile for later runs.
-
-Remove the example profile when finished:
-
-```bash
-python -m dingdongditch profile remove demo
-```
-
-Install all bundled browser engines and development dependencies with:
-
-```bash
 python -m pip install -e ".[dev]"
 python -m playwright install chromium firefox webkit
+python -m dingdongditch run examples/plans/example_navigation_verified.json
 ```
 
-## Example
+The CLI consumes authored JSON from a file or standard input. It does not
+author plans, heal locators, retry arbitrarily, or reinterpret intent.
 
-The canonical verified plan is
-[`examples/plans/example_navigation_verified.json`](./examples/plans/example_navigation_verified.json):
+## Core capabilities
 
-```json
-{
-  "browser": {
-    "provider": "playwright",
-    "engine": "chromium",
-    "channel": "bundled",
-    "headless": false
-  },
-  "plan": {
-    "plan_id": "example",
-    "failure_policy": "stop_on_failure",
-    "operations": [
-      {
-        "operation_id": "nav",
-        "url": "https://example.com",
-        "action": { "type": "navigate" },
-        "expectations": [
-          {
-            "type": "url",
-            "url_value": "https://example.com/",
-            "url_match": "exact"
-          },
-          {
-            "type": "text",
-            "locator": { "strategy": "exact_text", "value": "Example Domain" },
-            "text_value": "Example Domain",
-            "text_match": "contains"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+- Ordered plans and standalone operations with bounded timeouts and fresh
+  browser-observable verification.
+- `VERIFIED`, `NOT_VERIFIED`, `INDETERMINATE`, and `EXECUTION_FAILED` verdicts.
+- Chromium, Firefox, and WebKit through Playwright, with no engine fallback.
+- Explicit guarded branches, declared waits, bounded nested frame paths,
+  downloads, dialogs, and page operations.
+- Deterministic file uploads and custom combobox/autocomplete selection.
+- Network request/response metadata assertions and optional sanitized trace
+  artifacts.
+- Isolated persistent profiles, portable browser state, runtime-only secret
+  injection, and bounded host WebAuthn participation.
+- Model-neutral contracts, fail-closed target resolution, and no silent locator
+  healing.
 
-The CLI consumes authored plans from a file or standard input. It never authors,
-heals, or reinterprets them.
+## Guarded branches and frame paths
 
-## Core Capabilities
+Guards are finite declared UI-state branches, not general workflow control
+flow. A matching branch may run a bounded preparation-action list before the
+primary action; no branch match fails, and multiple matches are
+`INDETERMINATE`. Legacy `when_target_absent` guards remain compatible.
 
-- Ordered plans and standalone operations with bounded timeouts
-- Explicit URL, DOM, text, attribute, network, and page-state expectations
-- `VERIFIED`, `NOT_VERIFIED`, `INDETERMINATE`, and `EXECUTION_FAILED` receipts
-- Bundled Chromium, Firefox, and WebKit in headed or headless mode
-- Named profiles with automatic startup, readiness checks, exclusive locks, and clean shutdown
-- Persistent Chromium sessions with cookie and origin-local-storage state
-- Session export, import, validation, and clear commands
-- Explicit guarded optional target actions
-- Runtime-only secret injection and generic authentication callbacks
-- Declared waits, one-level iframe targeting, downloads, native dialogs, and tab/page operations
-- Read-only target and page inspection for active host-owned sessions
+Element-scoped actions, waits, expectations, page preconditions, and
+inspection can use either legacy one-hop `frame` or explicit bounded
+`frame_path`. Every hop is resolved in order. DingDongDitch never searches
+frames or falls back to the main document. See
+[iframe targeting](./Engineering/Phase%203/IFRAME_TARGETING.md).
 
-## Guarded Optional Actions
+## Stateful sessions and browser state
 
-A guarded action expresses one narrow conditional explicitly:
+`StatefulSessionRuntime` provides a host-owned
+`open -> observe -> execute -> verify -> observe -> close` lifecycle without
+exposing raw Playwright objects. It preserves ordinary validation, evidence,
+profile locking, and cleanup behavior. See the
+[stateful-session guide](./Engineering/Phase%203/STATEFUL_SESSIONS.md) and
+[`examples/stateful_session_example.py`](./examples/stateful_session_example.py).
 
-- If the declared target exists, dispatch the action and verify its normal expectations.
-- If the target is conclusively absent, dispatch nothing and verify the declared already-satisfied state.
+Portable state uses a versioned schema. Explicit exports can contain cookies,
+sanitized origin-localStorage, and opt-in IndexedDB. Treat exported state as
+sensitive session material: DingDongDitch does not retain it or act as a
+credential vault. IndexedDB is importable only when creating a new ephemeral
+context; sessionStorage, password managers, browser profile internals,
+extensions, caches, history, and passkeys are not portable. The full boundary
+is documented in [remaining infrastructure boundaries](./Engineering/REMAINING_INFRASTRUCTURE_BOUNDARIES.md).
 
-```json
-"guard": {
-  "when_target_absent": {
-    "expectations": [
-      {
-        "type": "element_exists",
-        "locator": { "strategy": "css", "value": "#consent-banner" },
-        "exists": false
-      }
-    ]
-  }
-}
-```
+Isolated named/DingDong profiles are supported for Chromium, Firefox, and
+WebKit where Playwright provides persistent contexts. There is no silent
+engine fallback or existing-profile migration between engines. Chromium's
+existing `default` profile is partially supported; existing Firefox and WebKit
+user profiles are unsupported.
 
-Only a clean zero-match result selects the absent branch. Ambiguous targets,
-backend errors, action failures, and failed postconditions remain failures.
-Unguarded actions retain strict missing-target behavior.
+## Interactions
 
-## Authentication & Sessions
+`upload_file` requires exact absolute file paths plus an explicit host
+allowlist or allowed root. It operates direct HTML file inputs, redacts local
+paths in receipts, and verifies fresh browser state even when a legitimate
+upload replaces the original input. It does not automate native file dialogs,
+directory uploads, file-chooser buttons, wildcard paths, or file discovery.
 
-Named profiles are application-managed browser state containers:
+[`examples/plans/upload_file.json`](./examples/plans/upload_file.json) is a
+portable template: replace its `/absolute/path/to/...` values with the exact
+authorized paths for your host before running it.
 
-```bash
-python -m dingdongditch profile create work
-python -m dingdongditch profile list
-python -m dingdongditch session export work session.json
-python -m dingdongditch session clear work
-python -m dingdongditch session import work session.json
-python -m dingdongditch profile remove work
-```
+`select_combobox_option` handles associated custom combobox/listbox controls
+only when one explicit option matches and remains selected after interaction.
+Typing or blindly pressing Enter is never treated as selection.
 
-Session files contain validated cookies and origin local storage. They are
-sensitive application artifacts and are not encrypted credential vaults.
+## Receipts, evidence, and network assertions
 
-Applications may provide a `SecretProvider` for short-lived browser injection
-and register generic callbacks for authentication-required, OTP, TOTP, passkey,
-and WebAuthn requests. DingDongDitch executes explicitly authored browser
-operations; it does not store credentials or implement website-specific login
-flows.
+Receipt schema **1.8.0** separates truth from diagnostics:
 
-## Receipts
+1. **Core Receipt** — compact deterministic verdict, status, target summary,
+   timing, and session/page identity.
+2. **Bounded Evidence** — sanitized failure, freshness, action, and network
+   evidence sufficient to justify the verdict.
+3. **Artifacts** — optional external references such as redacted screenshots
+   or a bounded sanitized network trace; never raw paths, image bytes, headers,
+   or request/response bodies.
 
-Every operation and plan produces browser-observable evidence and a structured
-verdict:
+Network assertions can require a request or response, HTTP method, bounded
+query-free URL/path match, status, and observable request-to-response timing.
+Exactly one post-action match is required; ambiguity is `INDETERMINATE`.
+Per-operation HAR is deliberately unsupported because it is context-wide and
+can capture unrelated traffic.
 
-- `VERIFIED`: every required expectation passed with fresh evidence.
-- `NOT_VERIFIED`: execution completed, but a declared expectation failed.
-- `INDETERMINATE`: the runtime could not make a justified success or failure claim.
-- `EXECUTION_FAILED`: validation, setup, resolution, or action dispatch failed.
+See the [receipt architecture](./Engineering/THREE_LAYER_RECEIPT_ARCHITECTURE.md)
+and [network/state/authentication boundaries](./Engineering/REMAINING_INFRASTRUCTURE_BOUNDARIES.md).
 
-```json
-{
-  "plan_id": "example",
-  "plan_verdict": "VERIFIED",
-  "completion_status": "completed",
-  "declared_step_count": 1,
-  "verified_step_count": 1
-}
-```
+## Secrets and WebAuthn
 
-Receipts include step results, lifecycle identifiers, target-resolution traces,
-expectation evidence, timing, cleanup state, and guarded-branch selection where
-applicable. Receipt success describes browser-observable facts, not external
-world truth.
+Hosts may provide a `SecretProvider`; plans carry only opaque
+`SecretReference` values and the runtime resolves them just in time into an
+ephemeral buffer for one fill. Resolved values are not persisted, serialized,
+or logged.
 
-## Project Philosophy
+WebAuthn participation is explicit and host-controlled. DingDongDitch sends a
+bounded metadata-only transport event and records completed, rejected,
+unsupported, timeout, or indeterminate participation. It does not control a
+native authenticator, create virtual credentials, extract private keys, supply
+assertions, or bypass authentication. A host callback alone is not browser
+verification.
 
-- Deterministic: the host authors every operation and expected outcome.
-- Explicit: URLs, targets, actions, guards, waits, and verification are declared.
-- Fail-closed: malformed, ambiguous, stale, or unsupported inputs do not dispatch.
-- Bounded: timeouts and retry windows are finite and authored.
-- Model-neutral: no model or AI provider owns the execution contract.
-- Observable: success requires evidence, not merely a successful tool call.
-- Non-autonomous: no hidden AI decisions, silent locator healing, or invented recovery.
+## Project boundaries
 
-See [Engineering Principles](./Engineering/ENGINEERING_PRINCIPLES.md) and
-[Non-Goals](./Engineering/NON_GOALS.md) for the full architectural boundaries.
+- Hosts declare URLs, targets, actions, guards, waits, and expected outcomes.
+- Malformed, ambiguous, stale, unsupported, or unverifiable input fails closed.
+- Plans are ordered; there are no arbitrary loops, DAGs, autonomous retries,
+  natural-language planning, or site-specific browser logic.
+- Arbitrary JavaScript execution from plans is unsupported.
 
-## Current Limitations
-
-- Website-specific selectors and behavior belong in plans or host applications.
-- External websites may change and should not be the sole CI validation source.
-- Plans are ordered and stop on failure; general branches, loops, and DAGs are unsupported.
-- Guarded actions cover only explicit target-present/target-absent behavior.
-- Persistent named profiles currently require Chromium.
-- Only Playwright-bundled Chromium, Firefox, and WebKit are generally supported; native Safari is unsupported.
-- Iframe targeting is limited to one declared level with no automatic frame search.
-- Authentication integrations are callback-driven; no website-specific login flows exist.
-- Session transfer covers cookies and origin local storage, not every browser data store.
-- Upload actions and arbitrary JavaScript execution from plans are unsupported.
-
-The repository remains pre-1.0; review the [changelog](./CHANGELOG.md) when
-upgrading between minor versions.
+See [Engineering Principles](./Engineering/ENGINEERING_PRINCIPLES.md),
+[Non-Goals](./Engineering/NON_GOALS.md), and the
+[plan-runner documentation](./Engineering/Phase%203/PLAN_RUNNER_CLI.md).
 
 ## Roadmap
 
-Future work is kept separate from implemented behavior:
+Future work remains separate from the public runtime contract:
 
-- Application-provided passkey and WebAuthn transports
-- External secret-manager adapters
-- Upload contracts and additional portable browser-state support
-- Nested-frame paths and additional browser capabilities
-- Additional installed browser-channel support where it can remain deterministic
+- Additional installed browser channels only where they can remain
+  deterministic and explicitly supported.
+- New bounded evidence/artifact types only with equally strict capture,
+  redaction, and verification boundaries.
 
-Roadmap items are not part of the current runtime contract.
+## Contributing and license
 
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md). Please review the
-[engineering principles](./Engineering/ENGINEERING_PRINCIPLES.md) and
-[non-goals](./Engineering/NON_GOALS.md) before proposing architectural changes.
-
-Project policies: [Support](./SUPPORT.md) · [Security](./SECURITY.md) ·
-[Governance](./GOVERNANCE.md) · [Code of Conduct](./CODE_OF_CONDUCT.md)
-
-## License
-
-DingDongDitch is available under the [MIT License](./LICENSE).
+See [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md), and
+[GOVERNANCE.md](./GOVERNANCE.md). DingDongDitch is available under the
+[MIT License](./LICENSE).

@@ -61,13 +61,19 @@ class PlanBuilder:
         expectations: list[Expectation] | None = None,
         *,
         frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
         page_transition: PageTransition | None = None,
     ) -> PlanBuilder:
         self.operations.append(
             Operation(
                 operation_id=operation_id,
                 url=url,
-                action=Action(type=ActionType.CLICK, locator=locator, frame=frame),
+                action=Action(
+                    type=ActionType.CLICK,
+                    locator=locator,
+                    frame=frame,
+                    frame_path=frame_path,
+                ),
                 expectations=list(expectations or []),
                 timeout_ms=self.default_timeout_ms,
                 page_transition=page_transition,
@@ -125,11 +131,18 @@ class PlanBuilder:
         expectations: list[Expectation] | None = None,
         *,
         frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
     ) -> PlanBuilder:
         return self._add(
             operation_id,
             url,
-            Action(type=ActionType.FILL, locator=locator, text=text, frame=frame),
+            Action(
+                type=ActionType.FILL,
+                locator=locator,
+                text=text,
+                frame=frame,
+                frame_path=frame_path,
+            ),
             expectations,
         )
 
@@ -144,6 +157,7 @@ class PlanBuilder:
         values: tuple[str, ...] | None = None,
         expectations: list[Expectation] | None = None,
         frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
     ) -> PlanBuilder:
         return self._add(
             operation_id,
@@ -155,6 +169,7 @@ class PlanBuilder:
                 option_label=label,
                 option_values=values,
                 frame=frame,
+                frame_path=frame_path,
             ),
             expectations,
         )
@@ -189,6 +204,7 @@ class PlanBuilder:
         expectations: list[Expectation] | None = None,
         *,
         frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
     ) -> PlanBuilder:
         if request.origin != PointerOrigin.VIEWPORT and locator is None:
             raise ValueError("element-relative pointer movement requires a locator")
@@ -199,6 +215,7 @@ class PlanBuilder:
                 type=ActionType.POINTER_MOVE,
                 locator=locator,
                 frame=frame,
+                frame_path=frame_path,
                 pointer_request=request,
             ),
             expectations,

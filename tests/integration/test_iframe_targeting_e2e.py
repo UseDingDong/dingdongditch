@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import urljoin
 
 import pytest
@@ -26,6 +27,11 @@ from dingdongditch.contract.operation import (
     Locator,
     LocatorStrategy,
     Operation,
+)
+from dingdongditch.contract.page_precondition import (
+    PageCondition,
+    PageConditionType,
+    PagePrecondition,
 )
 from dingdongditch.contract.plan import PlanVerdict
 from dingdongditch.contract.verdict import Verdict
@@ -135,7 +141,7 @@ def test_click_and_fill_inside_unique_same_origin_iframe(fixture_url, engine):
         assert fill.verdict == Verdict.VERIFIED
         assert fill.browser.get("browser_session_id") == sid
         assert fill.browser.get("page_id") == click.browser.get("page_id")
-        assert fill.schema_version == "1.7.0"
+        assert fill.schema_version == "1.8.0"
     finally:
         backend.stop()
 
@@ -459,3 +465,183 @@ def test_iframe_plan_file_and_stdin_compatible(fixture_url, engine, tmp_path):
     assert receipt.context_id
     assert receipt.page_id
     assert len({s.browser_session_id for s in receipt.steps if s.attempted}) == 1
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_nested_frame_path_click_fill_and_select(fixture_url, engine):
+    url = _host_url(fixture_url)
+    path = (_tid("unique-frame"), _tid("nested-frame"))
+    backend = PlaywrightBackend(browser_config=_cfg(engine))
+    backend.start()
+    try:
+        assert execute_operation(_nav(url), backend=backend).verdict is Verdict.VERIFIED
+        # The nested document's script intentionally registers after its
+        # controls; wait for its ordinary declared-load window before clicking.
+        backend.page.wait_for_timeout(500)
+        click = execute_operation(
+            Operation(
+                "nested-click", url,
+                Action(ActionType.CLICK, locator=_tid("nested-frame-click"), frame_path=path),
+                expectations=[Expectation(
+                    ExpectationType.TEXT, locator=_tid("nested-frame-status"),
+                    text_value="clicked", frame_path=path,
+                )],
+            ),
+            backend=backend,
+        )
+        assert click.verdict is Verdict.VERIFIED
+        assert click.target_resolution is not None
+        assert click.target_resolution["frame_path_depth"] == 2
+        assert len(click.target_resolution["resolved_frame_hops"]) == 2
+        assert click.target_resolution["failure_hop"] is None
+
+        fill = execute_operation(
+            Operation(
+                "nested-fill", url,
+                Action(ActionType.FILL, locator=_tid("nested-frame-input"), text="nested-value", frame_path=path),
+                expectations=[Expectation(
+                    ExpectationType.ATTRIBUTE, locator=_tid("nested-frame-input"),
+                    frame_path=path, attribute_name="value", attribute_value="nested-value",
+                )],
+            ),
+            backend=backend,
+        )
+        assert fill.verdict is Verdict.VERIFIED
+
+        selected = execute_operation(
+            Operation(
+                "nested-select", url,
+                Action(ActionType.SELECT_OPTION, locator=_tid("nested-frame-select"), option_value="nested", frame_path=path),
+                expectations=[Expectation(
+                    ExpectationType.ATTRIBUTE, locator=_tid("nested-frame-select"),
+                    frame_path=path, attribute_name="value", attribute_value="nested",
+                )],
+            ),
+            backend=backend,
+        )
+        assert selected.verdict is Verdict.VERIFIED
+        assert selected.browser["browser_session_id"] == click.browser["browser_session_id"]
+    finally:
+        backend.stop()
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_kind", "expected_hop"),
+    [
+        ((_tid("missing-outer"), _tid("nested-frame")), "missing_frame", 0),
+        ((_tid("unique-frame"), _tid("missing-inner")), "missing_frame", 1),
+        ((_tid("unique-frame"), _tid("ambiguous-inner-frame")), "ambiguous_frame", 1),
+    ],
+)
+def test_nested_frame_path_missing_and_ambiguous_hops_fail_closed(
+    fixture_url, path, expected_kind, expected_hop
+):
+    url = _host_url(fixture_url)
+    receipt = execute_operation(
+        Operation(
+            "nested-frame-failure", url,
+            Action(ActionType.CLICK, locator=_tid("nested-frame-click"), frame_path=path),
+            expectations=[], locate_retry_ms=0,
+        )
+    )
+    assert receipt.verdict is Verdict.EXECUTION_FAILED
+    assert receipt.failure_kind == expected_kind
+    assert receipt.target_resolution is not None
+    assert receipt.target_resolution["failure_hop"] == expected_hop
+
+
+def test_nested_frame_reloads_are_resolved_freshly_before_next_operation(fixture_url):
+    url = _host_url(fixture_url)
+    path = (_tid("unique-frame"), _tid("nested-frame"))
+    backend = PlaywrightBackend()
+    backend.start()
+    try:
+        assert execute_operation(_nav(url), backend=backend).verdict is Verdict.VERIFIED
+        reload_receipt = execute_operation(
+            Operation(
+                "reload-inner", url,
+                Action(ActionType.CLICK, locator=_tid("reload-nested-frame"), frame=_tid("unique-frame")),
+                expectations=[],
+            ),
+            backend=backend,
+        )
+        assert reload_receipt.action_executed_successfully is True
+        backend.page.wait_for_timeout(300)
+        filled = execute_operation(
+            Operation(
+                "fill-after-reload", url,
+                Action(ActionType.FILL, locator=_tid("nested-frame-input"), text="fresh", frame_path=path),
+                expectations=[Expectation(
+                    ExpectationType.ATTRIBUTE, locator=_tid("nested-frame-input"),
+                    frame_path=path, attribute_name="value", attribute_value="fresh",
+                )],
+                locate_retry_ms=2_000,
+            ),
+            backend=backend,
+        )
+        assert filled.verdict is Verdict.VERIFIED
+        assert filled.target_resolution["frame_path_depth"] == 2
+    finally:
+        backend.stop()
+
+
+def test_nested_frame_path_is_reresolved_after_pre_action_observation(fixture_url):
+    """A reload after a declared observation cannot reuse a stale Frame handle."""
+    url = _host_url(fixture_url)
+    path = (_tid("unique-frame"), _tid("nested-frame"))
+    backend = PlaywrightBackend()
+    backend.start()
+    try:
+        assert execute_operation(_nav(url), backend=backend).verdict is Verdict.VERIFIED
+        original_read = backend.read_element_state
+        reloaded = False
+
+        def reload_after_observation(*args, **kwargs):
+            nonlocal reloaded
+            state = original_read(*args, **kwargs)
+            if not reloaded and kwargs.get("frame_path") == path:
+                reloaded = True
+                backend.page.frame_locator('iframe[data-testid="unique-frame"]').get_by_test_id(
+                    "reload-nested-frame"
+                ).click()
+                backend.page.wait_for_timeout(300)
+            return state
+
+        with patch.object(backend, "read_element_state", side_effect=reload_after_observation):
+            receipt = execute_operation(
+                Operation(
+                    "fresh-after-precondition", url,
+                    Action(
+                        ActionType.FILL,
+                        locator=_tid("nested-frame-input"),
+                        text="fresh-after-observation",
+                        frame_path=path,
+                    ),
+                    expectations=[
+                        Expectation(
+                            ExpectationType.ATTRIBUTE,
+                            locator=_tid("nested-frame-input"),
+                            frame_path=path,
+                            attribute_name="value",
+                            attribute_value="fresh-after-observation",
+                        )
+                    ],
+                    page_precondition=PagePrecondition(
+                        (
+                            PageCondition(
+                                "nested-input-visible",
+                                PageConditionType.ELEMENT_VISIBLE,
+                                locator=_tid("nested-frame-input"),
+                                frame_path=path,
+                            ),
+                        )
+                    ),
+                    locate_retry_ms=2_000,
+                ),
+                backend=backend,
+            )
+        assert reloaded is True
+        assert receipt.verdict is Verdict.VERIFIED
+        assert receipt.target_resolution["frame_path_depth"] == 2
+    finally:
+        backend.stop()

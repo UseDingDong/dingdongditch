@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dingdongditch"
-version = "0.2.0"
+version = "0.4.0"
 description = "Model-neutral browser execution runtime (bundled Chromium + Firefox + WebKit)"
 readme = "README.md"
 license = { file = "LICENSE" }

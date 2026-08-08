@@ -233,9 +233,9 @@ def test_pointer_plan_receipt_preserves_screenshot_evidence(fixture_url, tmp_pat
         )
         receipt = execute_plan(plan, backend=backend)
         assert receipt.plan_verdict == PlanVerdict.VERIFIED
-        screenshots = receipt.steps[0].receipt.action_evidence["screenshots"]
+        screenshots = receipt.steps[0].receipt.artifacts
         assert len(screenshots) == 1
-        assert screenshots[0]["captured"] is True
+        assert screenshots[0]["status"] == "available"
         assert list(tmp_path.glob("*.png"))
     finally:
         backend.stop()

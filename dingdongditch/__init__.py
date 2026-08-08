@@ -4,7 +4,7 @@ Public API for typed contracts and execute_operation / execute_plan.
 Does not include a planner, site explorer, or workflow author.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 from dingdongditch.contract.browser import (
     BrowserChannel,
@@ -15,6 +15,11 @@ from dingdongditch.contract.browser import (
     default_browser_config,
 )
 from dingdongditch.contract.expectation import Expectation, ExpectationType
+from dingdongditch.contract.network import (
+    NetworkArtifactKind,
+    NetworkArtifactRequest,
+    NetworkUrlMatchMode,
+)
 from dingdongditch.contract.dialog import DialogAction, DialogContract, DialogRequirement, DialogType
 from dingdongditch.contract.screenshot import (
     DesktopRedactionRegion,
@@ -30,6 +35,7 @@ from dingdongditch.contract.operation import (
     LocatorStrategy,
     Operation,
     OperationGuard,
+    GuardBranch,
     TargetAbsentGuard,
     SelectMode,
 )
@@ -82,6 +88,8 @@ from dingdongditch.contract.download import (
     TrustedDownloadConfig,
 )
 from dingdongditch.contract.pointer import PointerMoveRequest, PointerOrigin
+from dingdongditch.contract.upload import UploadAuthorization, UploadValidationError
+from dingdongditch.contract.combobox import ComboboxSelection
 from dingdongditch.contract.observation import (
     CandidateEvidenceLevel,
     LocatorAttestation,
@@ -119,16 +127,43 @@ from dingdongditch.continuity import (
     TerminalClassification,
     TransportKind,
 )
+from dingdongditch.runtime.stateful_session import (
+    PublicSessionStatus,
+    SessionFailureKind,
+    SessionInfo,
+    SessionObservation,
+    SessionOperationResult,
+    SessionPlanResult,
+    StatefulSessionError,
+    StatefulSessionRuntime,
+    cleanup_expired_sessions,
+    close_session,
+    execute_session_operation,
+    execute_session_plan,
+    get_session,
+    inspect_session_dialogs,
+    inspect_session_pages,
+    observe_session_page,
+    open_session,
+    select_session_page,
+)
 from dingdongditch.authentication import (
     AuthEvent, AuthEventType, AuthenticationCallbacks, AuthenticationCapability,
     AuthenticationError, AuthenticationFailureKind, MappingSecretProvider,
-    ProfileInfo, ProfileManager, SecretProvider, SecretValue, redact,
+    ProfileInfo, ProfileManager, SecretProvider, SecretReference,
+    SecretResolutionReceipt, SecretValue, redact,
+    PORTABLE_STATE_SCHEMA_VERSION, PortableStateFeature, PortableStatePolicy,
+    PortableStateReceipt,
+    CallbackWebAuthnTransport, WebAuthnParticipationReceipt,
+    WebAuthnParticipationRequest, WebAuthnParticipationStatus, WebAuthnTransport,
+    WebAuthnTransportEvent, WebAuthnTransportResult,
 )
 
 __all__ = [
     "__version__",
     "Operation",
     "OperationGuard",
+    "GuardBranch",
     "TargetAbsentGuard",
     "Action",
     "ActionType",
@@ -149,6 +184,9 @@ __all__ = [
     "PagePreconditionEvaluation",
     "Expectation",
     "ExpectationType",
+    "NetworkUrlMatchMode",
+    "NetworkArtifactKind",
+    "NetworkArtifactRequest",
     "DialogType",
     "DialogAction",
     "DialogRequirement",
@@ -179,7 +217,12 @@ __all__ = [
     "AuthEvent", "AuthEventType", "AuthenticationCallbacks",
     "AuthenticationCapability", "AuthenticationError", "AuthenticationFailureKind",
     "MappingSecretProvider", "ProfileInfo", "ProfileManager", "SecretProvider",
-    "SecretValue", "redact",
+    "SecretReference", "SecretResolutionReceipt", "SecretValue", "redact",
+    "PORTABLE_STATE_SCHEMA_VERSION", "PortableStateFeature", "PortableStatePolicy",
+    "PortableStateReceipt",
+    "WebAuthnParticipationRequest", "WebAuthnParticipationReceipt",
+    "WebAuthnParticipationStatus", "WebAuthnTransport", "WebAuthnTransportEvent",
+    "WebAuthnTransportResult", "CallbackWebAuthnTransport",
     "PlanBuilder",
     "inspect_target",
     "list_dialog_history",
@@ -213,6 +256,9 @@ __all__ = [
     "TrustedDownloadConfig",
     "PointerMoveRequest",
     "PointerOrigin",
+    "UploadAuthorization",
+    "UploadValidationError",
+    "ComboboxSelection",
     "PageObservation",
     "PageObservationOptions",
     "ObservationReference",
@@ -236,6 +282,24 @@ __all__ = [
     "TransportKind",
     "TerminalClassification",
     "ApplicationLifecycleState",
+    "PublicSessionStatus",
+    "SessionFailureKind",
+    "SessionInfo",
+    "SessionObservation",
+    "SessionOperationResult",
+    "SessionPlanResult",
+    "StatefulSessionError",
+    "StatefulSessionRuntime",
+    "open_session",
+    "get_session",
+    "observe_session_page",
+    "execute_session_operation",
+    "execute_session_plan",
+    "inspect_session_pages",
+    "select_session_page",
+    "inspect_session_dialogs",
+    "close_session",
+    "cleanup_expired_sessions",
     "ApplicationLifecycleEvidence",
     "ApplicationLifecycleAdapter",
     "ChatGPTApplicationLifecycleAdapter",

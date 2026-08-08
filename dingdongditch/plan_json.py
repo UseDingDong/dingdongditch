@@ -289,6 +289,15 @@ def _locator_from_dict(data: Any, *, ctx: str) -> Locator:
     )
 
 
+def _frame_path_from_dict(data: Any, *, ctx: str) -> tuple[Locator, ...]:
+    if not isinstance(data, list):
+        raise PlanLoadError(f"{ctx} must be a list of locators", code="invalid_type")
+    return tuple(
+        _locator_from_dict(item, ctx=f"{ctx}[{index}]")
+        for index, item in enumerate(data)
+    )
+
+
 def _constraint_from_dict(data: Any, *, ctx: str) -> TargetConstraint:
     raw = _require_mapping(data, ctx=ctx)
     _reject_unknown(
@@ -370,6 +379,7 @@ def _wait_condition_from_dict(data: Any, *, ctx: str) -> WaitCondition:
                 "in_viewport",
                 "load_state",
                 "frame",
+                "frame_path",
             }
         ),
         ctx=ctx,
@@ -383,6 +393,11 @@ def _wait_condition_from_dict(data: Any, *, ctx: str) -> WaitCondition:
     frame = None
     if "frame" in raw and raw["frame"] is not None:
         frame = _locator_from_dict(raw["frame"], ctx=f"{ctx}.frame")
+    frame_path = (
+        _frame_path_from_dict(raw["frame_path"], ctx=f"{ctx}.frame_path")
+        if raw.get("frame_path") is not None
+        else ()
+    )
     text_match = TextMatchMode.CONTAINS
     if "text_match" in raw and raw["text_match"] is not None:
         text_match = _parse_enum(
@@ -409,6 +424,7 @@ def _wait_condition_from_dict(data: Any, *, ctx: str) -> WaitCondition:
         in_viewport=raw.get("in_viewport"),
         load_state=load_state,
         frame=frame,
+        frame_path=frame_path,
     )
 
 
@@ -506,6 +522,8 @@ def _action_from_dict(data: Any, *, ctx: str) -> Action:
                 "type",
                 "locator",
                 "text",
+                "secret_reference",
+                "secret_timeout_ms",
                 "key",
                 "key_scope",
                 "option_value",
@@ -515,9 +533,14 @@ def _action_from_dict(data: Any, *, ctx: str) -> Action:
                 "wait_condition",
                 "wait_timeout_ms",
                 "frame",
+                "frame_path",
                 "page_id",
                 "download_request",
                 "pointer_request",
+                "file_paths",
+                "allowed_files",
+                "allowed_roots",
+                "combobox",
             }
         ),
         ctx=ctx,
@@ -531,6 +554,11 @@ def _action_from_dict(data: Any, *, ctx: str) -> Action:
     frame = None
     if "frame" in raw and raw["frame"] is not None:
         frame = _locator_from_dict(raw["frame"], ctx=f"{ctx}.frame")
+    frame_path = (
+        _frame_path_from_dict(raw["frame_path"], ctx=f"{ctx}.frame_path")
+        if raw.get("frame_path") is not None
+        else ()
+    )
     key_scope = None
     if "key_scope" in raw and raw["key_scope"] is not None:
         key_scope = _parse_enum(KeyPressScope, raw["key_scope"], ctx=f"{ctx}.key_scope")
@@ -546,10 +574,51 @@ def _action_from_dict(data: Any, *, ctx: str) -> Action:
                 f"{ctx}.option_values must be a list", code="invalid_type"
             )
         option_values = tuple(raw["option_values"])
+    secret_reference = None
+    if raw.get("secret_reference") is not None:
+        from dingdongditch.authentication.secrets import SecretReference
+
+        secret_raw = _require_mapping(raw["secret_reference"], ctx=f"{ctx}.secret_reference")
+        _reject_unknown(secret_raw, frozenset({"reference_id"}), ctx=f"{ctx}.secret_reference")
+        if not isinstance(secret_raw.get("reference_id"), str):
+            raise PlanLoadError(
+                f"{ctx}.secret_reference.reference_id must be a string",
+                code="invalid_type",
+            )
+        secret_reference = SecretReference(secret_raw["reference_id"])
+    upload_authorization = None
+    if atype == ActionType.UPLOAD_FILE:
+        from dingdongditch.contract.upload import UploadAuthorization
+        def _string_tuple(name: str) -> tuple[str, ...]:
+            value = raw.get(name, [])
+            if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                raise PlanLoadError(f"{ctx}.{name} must be a list of strings", code="invalid_type")
+            return tuple(value)
+        upload_authorization = UploadAuthorization(
+            file_paths=_string_tuple("file_paths"),
+            allowed_files=_string_tuple("allowed_files"),
+            allowed_roots=_string_tuple("allowed_roots"),
+        )
+    combobox_selection = None
+    if atype == ActionType.SELECT_COMBOBOX_OPTION:
+        from dingdongditch.contract.combobox import ComboboxSelection
+        combo = _require_mapping(raw.get("combobox"), ctx=f"{ctx}.combobox")
+        _reject_unknown(combo, frozenset({"query", "expected_option", "match", "clear_existing", "dropdown_timeout_ms"}), ctx=f"{ctx}.combobox")
+        if "query" not in combo or "expected_option" not in combo:
+            raise PlanLoadError(f"{ctx}.combobox: missing query or expected_option", code="missing_field")
+        from dingdongditch.contract.modes import TextMatchMode
+        combobox_selection = ComboboxSelection(
+            query=combo["query"], expected_option=combo["expected_option"],
+            match=_parse_enum(TextMatchMode, combo.get("match", "exact"), ctx=f"{ctx}.combobox.match"),
+            clear_existing=combo.get("clear_existing", True),
+            dropdown_timeout_ms=combo.get("dropdown_timeout_ms", 5000),
+        )
     return Action(
         type=atype,
         locator=locator,
         text=raw.get("text"),
+        secret_reference=secret_reference,
+        secret_timeout_ms=raw.get("secret_timeout_ms", 5_000),
         key=raw.get("key"),
         key_scope=key_scope,
         option_value=raw.get("option_value"),
@@ -559,6 +628,7 @@ def _action_from_dict(data: Any, *, ctx: str) -> Action:
         wait_condition=wait_condition,
         wait_timeout_ms=raw.get("wait_timeout_ms"),
         frame=frame,
+        frame_path=frame_path,
         page_id=raw.get("page_id"),
         download_request=(
             _download_request_from_dict(raw["download_request"], ctx=f"{ctx}.download_request")
@@ -570,6 +640,8 @@ def _action_from_dict(data: Any, *, ctx: str) -> Action:
             )
             if raw.get("pointer_request") is not None else None
         ),
+        upload_authorization=upload_authorization,
+        combobox_selection=combobox_selection,
     )
 
 
@@ -594,7 +666,14 @@ def _expectation_from_dict(data: Any, *, ctx: str) -> Expectation:
                 "network_url_substring",
                 "network_method",
                 "network_status",
+                "network_url_match",
+                "network_request_observed",
+                "network_response_observed",
+                "network_max_elapsed_ms",
+                "file_names",
+                "file_count",
                 "frame",
+                "frame_path",
             }
         ),
         ctx=ctx,
@@ -608,6 +687,11 @@ def _expectation_from_dict(data: Any, *, ctx: str) -> Expectation:
     frame = None
     if "frame" in raw and raw["frame"] is not None:
         frame = _locator_from_dict(raw["frame"], ctx=f"{ctx}.frame")
+    frame_path = (
+        _frame_path_from_dict(raw["frame_path"], ctx=f"{ctx}.frame_path")
+        if raw.get("frame_path") is not None
+        else ()
+    )
     url_match = UrlMatchMode.EXACT
     if "url_match" in raw and raw["url_match"] is not None:
         url_match = _parse_enum(UrlMatchMode, raw["url_match"], ctx=f"{ctx}.url_match")
@@ -616,6 +700,22 @@ def _expectation_from_dict(data: Any, *, ctx: str) -> Expectation:
         text_match = _parse_enum(
             TextMatchMode, raw["text_match"], ctx=f"{ctx}.text_match"
         )
+    file_names = None
+    if raw.get("file_names") is not None:
+        if not isinstance(raw["file_names"], list) or any(
+            not isinstance(item, str) for item in raw["file_names"]
+        ):
+            raise PlanLoadError(
+                f"{ctx}.file_names must be a list of strings", code="invalid_type"
+            )
+        file_names = tuple(raw["file_names"])
+    from dingdongditch.contract.network import NetworkUrlMatchMode
+
+    network_url_match = _parse_enum(
+        NetworkUrlMatchMode,
+        raw.get("network_url_match", "contains"),
+        ctx=f"{ctx}.network_url_match",
+    )
     return Expectation(
         type=etype,
         expectation_id=raw.get("expectation_id", "") or "",
@@ -632,7 +732,14 @@ def _expectation_from_dict(data: Any, *, ctx: str) -> Expectation:
         network_url_substring=raw.get("network_url_substring"),
         network_method=raw.get("network_method"),
         network_status=raw.get("network_status"),
+        network_url_match=network_url_match,
+        network_request_observed=raw.get("network_request_observed", True),
+        network_response_observed=raw.get("network_response_observed"),
+        network_max_elapsed_ms=raw.get("network_max_elapsed_ms"),
+        file_names=file_names,
+        file_count=raw.get("file_count"),
         frame=frame,
+        frame_path=frame_path,
     )
 
 
@@ -668,7 +775,7 @@ def _page_condition_from_dict(data: Any, *, ctx: str) -> PageCondition:
             {"condition_id", "type", "query_name", "query_value"}
         ),
         PageConditionType.ELEMENT_VISIBLE: frozenset(
-            {"condition_id", "type", "locator", "frame"}
+            {"condition_id", "type", "locator", "frame", "frame_path"}
         ),
     }
     _reject_unknown(raw, allowed_by_type[ctype], ctx=ctx)
@@ -686,12 +793,17 @@ def _page_condition_from_dict(data: Any, *, ctx: str) -> PageCondition:
         )
     locator = None
     frame = None
+    frame_path: tuple[Locator, ...] = ()
     if ctype == PageConditionType.ELEMENT_VISIBLE:
         if "locator" not in raw:
             raise PlanLoadError(f"{ctx}: missing locator", code="missing_field")
         locator = _locator_from_dict(raw["locator"], ctx=f"{ctx}.locator")
         if raw.get("frame") is not None:
             frame = _locator_from_dict(raw["frame"], ctx=f"{ctx}.frame")
+        if raw.get("frame_path") is not None:
+            frame_path = _frame_path_from_dict(
+                raw["frame_path"], ctx=f"{ctx}.frame_path"
+            )
     condition = PageCondition(
         condition_id=condition_id,
         type=ctype,
@@ -703,6 +815,7 @@ def _page_condition_from_dict(data: Any, *, ctx: str) -> PageCondition:
         query_value=raw.get("query_value"),
         locator=locator,
         frame=frame,
+        frame_path=frame_path,
     )
     try:
         condition.validate()
@@ -760,6 +873,8 @@ def operation_from_dict(
                 "page_precondition",
                 "target_preparation",
                 "guard",
+                "network_artifact",
+                "webauthn",
             }
         ),
         ctx=ctx,
@@ -822,43 +937,164 @@ def operation_from_dict(
             )
         )
     guard = None
-    if raw.get("guard") is not None:
-        from dingdongditch.contract.operation import OperationGuard, TargetAbsentGuard
+    network_artifact = None
+    if raw.get("network_artifact") is not None:
+        from dingdongditch.contract.network import (
+            NetworkArtifactKind,
+            NetworkArtifactRequest,
+        )
 
-        guard_raw = _require_mapping(raw["guard"], ctx=f"{ctx}.guard")
-        _reject_unknown(guard_raw, frozenset({"when_target_absent"}), ctx=f"{ctx}.guard")
-        if "when_target_absent" not in guard_raw:
-            raise PlanLoadError(f"{ctx}.guard: missing when_target_absent", code="missing_field")
-        absent_raw = _require_mapping(
-            guard_raw["when_target_absent"], ctx=f"{ctx}.guard.when_target_absent"
+        artifact_raw = _require_mapping(
+            raw["network_artifact"], ctx=f"{ctx}.network_artifact"
         )
         _reject_unknown(
-            absent_raw,
-            frozenset({"expectations"}),
-            ctx=f"{ctx}.guard.when_target_absent",
+            artifact_raw, frozenset({"kind", "max_records"}),
+            ctx=f"{ctx}.network_artifact",
         )
-        absent_expectations = absent_raw.get("expectations")
-        if not isinstance(absent_expectations, list):
+        network_artifact = NetworkArtifactRequest(
+            kind=_parse_enum(
+                NetworkArtifactKind,
+                artifact_raw.get("kind", "sanitized_trace"),
+                ctx=f"{ctx}.network_artifact.kind",
+            ),
+            max_records=artifact_raw.get("max_records", 32),
+        )
+    webauthn = None
+    if raw.get("webauthn") is not None:
+        from dingdongditch.authentication.webauthn import WebAuthnParticipationRequest
+
+        webauthn_raw = _require_mapping(raw["webauthn"], ctx=f"{ctx}.webauthn")
+        _reject_unknown(
+            webauthn_raw, frozenset({"request_id", "timeout_ms"}),
+            ctx=f"{ctx}.webauthn",
+        )
+        if not isinstance(webauthn_raw.get("request_id"), str):
             raise PlanLoadError(
-                f"{ctx}.guard.when_target_absent.expectations must be a list",
-                code="invalid_type",
+                f"{ctx}.webauthn.request_id must be a string", code="invalid_type"
             )
-        if not absent_expectations:
+        webauthn = WebAuthnParticipationRequest(
+            request_id=webauthn_raw["request_id"],
+            timeout_ms=webauthn_raw.get("timeout_ms", 30_000),
+        )
+    if raw.get("guard") is not None:
+        from dingdongditch.contract.operation import (
+            GuardBranch,
+            OperationGuard,
+            TargetAbsentGuard,
+        )
+
+        guard_raw = _require_mapping(raw["guard"], ctx=f"{ctx}.guard")
+        _reject_unknown(
+            guard_raw,
+            frozenset({"when_target_absent", "branches", "otherwise"}),
+            ctx=f"{ctx}.guard",
+        )
+        has_legacy = "when_target_absent" in guard_raw
+        has_branches = "branches" in guard_raw or "otherwise" in guard_raw
+        if has_legacy == has_branches:
             raise PlanLoadError(
-                f"{ctx}.guard.when_target_absent.expectations must not be empty",
+                f"{ctx}.guard: declare exactly one of when_target_absent or branches",
                 code="invalid_plan",
             )
-        guard = OperationGuard(
-            when_target_absent=TargetAbsentGuard(
-                expectations=tuple(
-                    _expectation_from_dict(
-                        item,
-                        ctx=f"{ctx}.guard.when_target_absent.expectations[{index}]",
+        if has_legacy:
+            absent_raw = _require_mapping(
+                guard_raw["when_target_absent"],
+                ctx=f"{ctx}.guard.when_target_absent",
+            )
+            _reject_unknown(
+                absent_raw,
+                frozenset({"expectations"}),
+                ctx=f"{ctx}.guard.when_target_absent",
+            )
+            absent_expectations = absent_raw.get("expectations")
+            if not isinstance(absent_expectations, list):
+                raise PlanLoadError(
+                    f"{ctx}.guard.when_target_absent.expectations must be a list",
+                    code="invalid_type",
+                )
+            if not absent_expectations:
+                raise PlanLoadError(
+                    f"{ctx}.guard.when_target_absent.expectations must not be empty",
+                    code="invalid_plan",
+                )
+            guard = OperationGuard(
+                when_target_absent=TargetAbsentGuard(
+                    expectations=tuple(
+                        _expectation_from_dict(
+                            item,
+                            ctx=f"{ctx}.guard.when_target_absent.expectations[{index}]",
+                        )
+                        for index, item in enumerate(absent_expectations)
                     )
-                    for index, item in enumerate(absent_expectations)
                 )
             )
-        )
+        else:
+            branches_raw = guard_raw.get("branches")
+            if not isinstance(branches_raw, list) or not branches_raw:
+                raise PlanLoadError(
+                    f"{ctx}.guard.branches must be a non-empty list",
+                    code="invalid_plan",
+                )
+            branches: list[GuardBranch] = []
+            for branch_index, branch_item in enumerate(branches_raw):
+                branch_ctx = f"{ctx}.guard.branches[{branch_index}]"
+                branch_raw = _require_mapping(branch_item, ctx=branch_ctx)
+                _reject_unknown(
+                    branch_raw,
+                    frozenset({"branch_id", "when", "execute"}),
+                    ctx=branch_ctx,
+                )
+                if "branch_id" not in branch_raw or "when" not in branch_raw:
+                    raise PlanLoadError(
+                        f"{branch_ctx}: missing branch_id or when", code="missing_field"
+                    )
+                when_raw = _require_mapping(branch_raw["when"], ctx=f"{branch_ctx}.when")
+                _reject_unknown(
+                    when_raw, frozenset({"expectations"}), ctx=f"{branch_ctx}.when"
+                )
+                branch_expectations = when_raw.get("expectations")
+                if not isinstance(branch_expectations, list) or not branch_expectations:
+                    raise PlanLoadError(
+                        f"{branch_ctx}.when.expectations must be a non-empty list",
+                        code="invalid_plan",
+                    )
+                execute_raw = branch_raw.get("execute", [])
+                if not isinstance(execute_raw, list):
+                    raise PlanLoadError(
+                        f"{branch_ctx}.execute must be a list", code="invalid_type"
+                    )
+                branches.append(
+                    GuardBranch(
+                        branch_id=branch_raw["branch_id"],
+                        when=tuple(
+                            _expectation_from_dict(
+                                item,
+                                ctx=f"{branch_ctx}.when.expectations[{index}]",
+                            )
+                            for index, item in enumerate(branch_expectations)
+                        ),
+                        execute=tuple(
+                            _action_from_dict(item, ctx=f"{branch_ctx}.execute[{index}]")
+                            for index, item in enumerate(execute_raw)
+                        ),
+                    )
+                )
+            otherwise_raw = guard_raw.get("otherwise")
+            if otherwise_raw is not None and not isinstance(otherwise_raw, list):
+                raise PlanLoadError(
+                    f"{ctx}.guard.otherwise must be a list", code="invalid_type"
+                )
+            guard = OperationGuard(
+                branches=tuple(branches),
+                otherwise=(
+                    tuple(
+                        _action_from_dict(item, ctx=f"{ctx}.guard.otherwise[{index}]")
+                        for index, item in enumerate(otherwise_raw)
+                    )
+                    if otherwise_raw is not None
+                    else None
+                ),
+            )
         if action.locator is None or action.type not in TARGET_BASED_ACTIONS:
             raise PlanLoadError(
                 f"{ctx}.guard is supported only for target-based actions",
@@ -894,6 +1130,8 @@ def operation_from_dict(
         ),
         target_preparation=target_preparation,
         guard=guard,
+        network_artifact=network_artifact,
+        webauthn=webauthn,
     )
 
 

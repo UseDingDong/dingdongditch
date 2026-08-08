@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>DingDongDitch upload fixture</title>
+<body>
+  <label>Single <input data-testid="single-upload" type="file" accept=".txt,text/plain"></label>
+  <label>Multiple <input data-testid="multi-upload" type="file" multiple accept=".txt,text/plain"></label>
+  <input data-testid="hidden-upload" type="file" hidden>
+  <button data-testid="not-file">Not a file input</button>
+  <input class="ambiguous-upload" type="file"><input class="ambiguous-upload" type="file">
+  <div data-testid="replace-scope"><input data-testid="replace-upload" type="file" accept=".txt"></div>
+  <div data-testid="remove-scope"><input data-testid="remove-upload" type="file" accept=".txt"></div>
+  <div data-testid="chip-scope"><input data-testid="chip-upload" type="file" accept=".txt"></div>
+  <div data-testid="stale-scope">upload-one.txt<input data-testid="stale-upload" data-skip-generic="true" type="file" accept=".txt"></div>
+  <output data-testid="upload-output" data-count="0"></output>
+  <script>
+    for (const input of document.querySelectorAll('input[type=file]')) {
+      if (input.dataset.skipGeneric) continue;
+      input.addEventListener('change', () => {
+        const names = Array.from(input.files, file => file.name);
+        const output = document.querySelector('[data-testid=upload-output]');
+        output.textContent = names.join(', ');
+        output.dataset.count = String(names.length);
+      });
+    }
+    document.querySelector('[data-testid=replace-upload]').addEventListener('change', e => {
+      const transfer = new DataTransfer(); for (const file of e.target.files) transfer.items.add(file);
+      const replacement = document.createElement('input'); replacement.type = 'file'; replacement.dataset.testid = 'replacement-file'; replacement.files = transfer.files;
+      e.target.replaceWith(replacement);
+    });
+    document.querySelector('[data-testid=remove-upload]').addEventListener('change', e => {
+      const name=e.target.files[0].name; e.target.parentElement.innerHTML=`<span data-testid="removed-name">${name}</span>`;
+    });
+    document.querySelector('[data-testid=chip-upload]').addEventListener('change', e => {
+      const name=e.target.files[0].name; e.target.parentElement.innerHTML=`<span class="chip">${name}</span><button aria-label="Remove file">Remove file</button>`;
+    });
+    document.querySelector('[data-testid=stale-upload]').addEventListener('change', e => e.target.remove());
+  </script>
+</body>
+</html>

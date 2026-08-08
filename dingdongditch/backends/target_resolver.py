@@ -65,7 +65,7 @@ class ResolvedTarget:
 
 @dataclass
 class ResolvedFrame:
-    """Result of resolving a declared iframe element in the main document."""
+    """Result of resolving a declared iframe element without exposing it publicly."""
 
     ok: bool
     frame: Frame | None
@@ -73,6 +73,7 @@ class ResolvedFrame:
     error: str | None
     failure_kind: str | None
     trace: TargetResolutionTrace
+    safe_identity: dict[str, Any] | None = None
 
 
 def identity_locator(locator: Locator) -> Locator:
@@ -281,18 +282,18 @@ def _resolve_container(
 
 
 def resolve_frame(
-    page: Page,
+    root: ResolutionRoot,
     frame_locator: Locator,
     *,
     backend_identity: str = "playwright-sync",
 ) -> ResolvedFrame:
-    """Resolve one unique iframe/frame element in the main document and return its Frame.
+    """Resolve one unique iframe/frame element below an explicit current root.
 
-    Does not search nested frames, does not fall back to the main document, and
-    does not mutate any global "current frame" state.
+    Does not search sibling/descendant frames, fall back to a different root,
+    or mutate any global "current frame" state.
     """
     element = resolve_target(
-        page,
+        root,
         frame_locator,
         cardinality=CardinalityPolicy.EXACTLY_ONE,
         backend_identity=backend_identity,
@@ -349,10 +350,24 @@ def resolve_frame(
         elif stage.stage == "constraint":
             stage.stage = "frame_constraint"
 
+    safe_identity: dict[str, Any] | None = None
     try:
-        tag = str(
-            loc.evaluate("(e) => (e.tagName || '').toLowerCase()") or ""
+        safe_identity = loc.evaluate(
+            """(e) => {
+              let srcOrigin = null;
+              try { srcOrigin = e.src ? new URL(e.src, document.baseURI).origin : null; }
+              catch (_) {}
+              return {
+                tag: (e.tagName || '').toLowerCase(),
+                id: e.id || null,
+                name: e.getAttribute('name'),
+                test_id: e.getAttribute('data-testid'),
+                title: e.getAttribute('title'),
+                src_origin: srcOrigin,
+              };
+            }"""
         )
+        tag = str((safe_identity or {}).get("tag") or "")
     except PlaywrightError as exc:
         reason = f"iframe element observation failed: {exc}"
         trace.failure_kind = "detached_frame"
@@ -445,6 +460,73 @@ def resolve_frame(
         error=None,
         failure_kind=None,
         trace=trace,
+        safe_identity=safe_identity,
+    )
+
+
+def resolve_frame_path(
+    page: Page,
+    frame_path: tuple[Locator, ...],
+    *,
+    backend_identity: str = "playwright-sync",
+) -> ResolvedFrame:
+    """Resolve every host-declared frame hop in order, with no frame guessing."""
+    if not frame_path:
+        raise ValueError("resolve_frame_path requires at least one declared frame hop")
+
+    root: ResolutionRoot = page
+    all_stages: list[ResolutionStage] = []
+    path_descriptions = [locator.describe() for locator in frame_path]
+    resolved_hops: list[dict[str, Any]] = []
+    last: ResolvedFrame | None = None
+    for hop, locator in enumerate(frame_path):
+        result = resolve_frame(root, locator, backend_identity=backend_identity)
+        for stage in result.trace.stages:
+            stage.stage = f"frame_hop_{hop}_{stage.stage}"
+        all_stages.extend(result.trace.stages)
+        trace = result.trace
+        trace.stages = all_stages
+        trace.frame_locator = locator.describe() if len(frame_path) == 1 else None
+        trace.frame_path = path_descriptions
+        trace.frame_path_depth = len(frame_path)
+        trace.resolved_frame_hops = list(resolved_hops)
+        if not result.ok or result.frame is None:
+            trace.failure_hop = hop
+            return ResolvedFrame(
+                ok=False,
+                frame=None,
+                match_count=result.match_count,
+                error=result.error,
+                failure_kind=result.failure_kind,
+                trace=trace,
+            )
+        resolved_hops.append(
+            {
+                "hop": hop,
+                "locator": locator.describe(),
+                "identity": result.safe_identity or {"status": "unavailable"},
+            }
+        )
+        trace.resolved_frame_hops = list(resolved_hops)
+        root = result.frame
+        last = result
+
+    assert last is not None
+    trace = last.trace
+    trace.stages = all_stages
+    trace.frame_locator = frame_path[0].describe() if len(frame_path) == 1 else None
+    trace.frame_path = path_descriptions
+    trace.frame_path_depth = len(frame_path)
+    trace.resolved_frame_hops = resolved_hops
+    trace.failure_hop = None
+    return ResolvedFrame(
+        ok=True,
+        frame=last.frame,
+        match_count=1,
+        error=None,
+        failure_kind=None,
+        trace=trace,
+        safe_identity=last.safe_identity,
     )
 
 
@@ -465,6 +547,10 @@ def merge_frame_trace(
         backend_identity=target_trace.backend_identity,
         candidate_summaries=list(target_trace.candidate_summaries),
         frame_locator=frame_trace.frame_locator,
+        frame_path=frame_trace.frame_path,
+        frame_path_depth=frame_trace.frame_path_depth,
+        resolved_frame_hops=list(frame_trace.resolved_frame_hops),
+        failure_hop=frame_trace.failure_hop,
     )
     return merged
 

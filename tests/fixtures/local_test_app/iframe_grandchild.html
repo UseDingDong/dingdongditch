@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Iframe Grandchild Fixture</title></head>
+<body>
+  <button type="button" data-testid="nested-frame-click" id="nested-frame-click">Nested Click</button>
+  <input data-testid="nested-frame-input" id="nested-frame-input" type="text" value="" />
+  <select data-testid="nested-frame-select" id="nested-frame-select">
+    <option value="">--</option>
+    <option value="nested">Nested option</option>
+  </select>
+  <span data-testid="nested-frame-status" id="nested-frame-status">idle</span>
+  <script>
+    document.getElementById("nested-frame-click").addEventListener("click", () => {
+      document.getElementById("nested-frame-status").textContent = "clicked";
+    });
+  </script>
+</body>
+</html>

@@ -123,7 +123,7 @@ def test_wait_element_visible_and_hidden(fixture_url, engine):
         assert visible.action_evidence["condition_satisfied"] is True
         assert visible.action_evidence["timeout_occurred"] is False
         assert visible.browser["engine"] == engine.value
-        assert visible.schema_version == "1.7.0"
+        assert visible.schema_version == "1.8.0"
 
         execute_operation(_click(fixture_url, "delay-hide-trigger"), backend=backend)
         hidden = execute_operation(

@@ -21,6 +21,12 @@
   <div style="height: 400px;"></div>
   <button type="button" data-testid="frame-below-fold" id="frame-below-fold">Below fold</button>
 
+  <!-- Explicit nested-frame fixtures.  The ambiguous pair is intentional. -->
+  <iframe data-testid="nested-frame" id="nested-frame" title="Nested Frame" src="iframe_grandchild.html"></iframe>
+  <iframe data-testid="ambiguous-inner-frame" title="Ambiguous Inner A" src="iframe_grandchild.html"></iframe>
+  <iframe data-testid="ambiguous-inner-frame" title="Ambiguous Inner B" src="iframe_grandchild.html"></iframe>
+  <button type="button" data-testid="reload-nested-frame" id="reload-nested-frame">Reload nested frame</button>
+
   <script>
     document.getElementById("frame-click").addEventListener("click", () => {
       const btn = document.getElementById("frame-click");
@@ -33,6 +39,10 @@
       setTimeout(() => {
         document.getElementById("frame-delayed").classList.remove("hidden");
       }, 400);
+    });
+    document.getElementById("reload-nested-frame").addEventListener("click", () => {
+      const nested = document.getElementById("nested-frame");
+      nested.src = "iframe_grandchild.html?reload=" + Date.now();
     });
   </script>
 </body>

@@ -12,6 +12,12 @@ class AuthenticationFailureKind(str, Enum):
     SESSION_INVALID = "session_invalid"
     SESSION_IO_ERROR = "session_io_error"
     SECRET_NOT_FOUND = "secret_not_found"
+    SECRET_REFERENCE_INVALID = "secret_reference_invalid"
+    SECRET_PROVIDER_FAILED = "secret_provider_failed"
+    SECRET_PROVIDER_TIMEOUT = "secret_provider_timeout"
+    SECRET_VALUE_INVALID = "secret_value_invalid"
+    SESSION_UNSUPPORTED = "session_unsupported"
+    SESSION_STALE = "session_stale"
     CALLBACK_FAILED = "authentication_callback_failed"
     NOT_READY = "browser_not_ready"
 

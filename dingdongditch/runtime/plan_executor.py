@@ -21,6 +21,7 @@ from dingdongditch.contract.plan import (
 )
 from dingdongditch.contract.verdict import Verdict
 from dingdongditch.contract.download import TrustedDownloadConfig
+from dingdongditch.authentication import AuthenticationCapability
 from dingdongditch.runtime.executor import execute_operation
 from dingdongditch.runtime.plan_timing import PlanTimingState
 
@@ -129,6 +130,7 @@ def _execute_plan(
     *,
     backend: PlaywrightBackend | None = None,
     trusted_download_config: TrustedDownloadConfig | None = None,
+    authentication: AuthenticationCapability | None = None,
 ) -> PlanReceipt:
     """Execute an ordered plan through one retained browser session.
 
@@ -192,6 +194,7 @@ def _execute_plan(
             backend = PlaywrightBackend(
                 browser_config=plan.browser_config,
                 trusted_download_config=trusted_download_config,
+                authentication=authentication,
             )
         except BrowserConfigError as exc:
             return _build_receipt(
@@ -354,12 +357,15 @@ def execute_plan(
     *,
     backend: PlaywrightBackend | None = None,
     trusted_download_config: TrustedDownloadConfig | None = None,
+    authentication: AuthenticationCapability | None = None,
 ) -> PlanReceipt:
     if backend is None:
         return _execute_plan(
-            plan, backend=None, trusted_download_config=trusted_download_config
+            plan, backend=None, trusted_download_config=trusted_download_config,
+            authentication=authentication,
         )
     with backend.exclusive_use(f"plan:{plan.plan_id}"):
         return _execute_plan(
-            plan, backend=backend, trusted_download_config=trusted_download_config
+            plan, backend=backend, trusted_download_config=trusted_download_config,
+            authentication=authentication,
         )

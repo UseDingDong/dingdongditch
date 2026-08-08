@@ -58,6 +58,7 @@
 
   <div class="row">
     <button id="network-control" data-testid="network-control" type="button">Trigger Network</button>
+    <button id="network-post-control" data-testid="network-post-control" type="button">Trigger POST Network</button>
   </div>
 
   <div class="row">
@@ -552,6 +553,10 @@
       } catch (err) {
         mark("medium-ending-video-play-failed");
       }
+    });
+    document.getElementById("network-post-control").addEventListener("click", async () => {
+      const response = await fetch("/api/checkout?access_token=fixture-secret", { method: "POST" });
+      mark("checkout-" + response.status);
     });
     document.getElementById("delayed-download").addEventListener("click", () => {
       setTimeout(() => document.getElementById("download-text").click(), 100);

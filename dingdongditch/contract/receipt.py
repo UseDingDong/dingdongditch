@@ -13,7 +13,7 @@ from dingdongditch.evidence.models import (
     RecoveryAttempt,
 )
 
-RECEIPT_SCHEMA_VERSION = "1.7.0"
+RECEIPT_SCHEMA_VERSION = "1.8.0"
 
 
 def _deep_freeze_receipt(value: Any) -> Any:
@@ -63,6 +63,12 @@ class ExecutionReceipt:
     navigation_occurred: bool = False
     dispatch_document_url: str | None = None
     telemetry: list[dict[str, Any]] | None = None
+    # Per-operation monotonic runtime duration phases (not upstream reasoning).
+    operation_timing: dict[str, int] | None = None
+    # Bounded semantic justifications for failed/indeterminate expectations.
+    expectation_evidence: list[dict[str, Any]] | None = None
+    # Optional heavyweight material is referenced, never embedded.
+    artifacts: list[dict[str, Any]] | None = None
     cleanup: dict[str, Any] | None = None
     page_transition: dict[str, Any] | None = None
     _sealed: bool = False
@@ -104,6 +110,9 @@ class ExecutionReceipt:
             "navigation_occurred": self.navigation_occurred,
             "dispatch_document_url": self.dispatch_document_url,
             "telemetry": list(self.telemetry or []),
+            "operation_timing": self.operation_timing,
+            "expectation_evidence": list(self.expectation_evidence or []),
+            "artifacts": list(self.artifacts or []),
             "cleanup": self.cleanup,
             "page_transition": self.page_transition,
             "expectations_declared": self.expectations_declared,
@@ -122,4 +131,65 @@ class ExecutionReceipt:
             "browser_identity": self.browser_identity,
             "browser": self.browser,
             "runtime_version": self.runtime_version,
+        }
+
+    def to_core_dict(self) -> dict[str, Any]:
+        """Layer 1: small deterministic truth record without evidence/artifacts."""
+        resolution = self.target_resolution or {}
+        expectation_counts = {"pass": 0, "fail": 0, "indeterminate": 0}
+        for result in self.expectation_results:
+            if result.result in expectation_counts:
+                expectation_counts[result.result] += 1
+        browser = self.browser or {}
+        webauthn = (self.action_evidence or {}).get("webauthn")
+        return {
+            "schema_version": self.schema_version,
+            "operation_id": self.operation_id,
+            "action_type": self.action_type,
+            "verdict": self.verdict.value,
+            "failure_kind": self.failure_kind,
+            "execution_status": self.execution_status,
+            "target_resolution": {
+                "final_candidate_count": resolution.get("final_candidate_count"),
+                "cardinality_passed": resolution.get("cardinality_passed"),
+                "failure_kind": resolution.get("failure_kind"),
+                "frame_path_depth": resolution.get("frame_path_depth", 0),
+                "failure_hop": resolution.get("failure_hop"),
+            } if resolution else None,
+            "expectation_outcome": {
+                "declared": self.expectations_declared,
+                **expectation_counts,
+            },
+            "timing": dict(self.operation_timing or {}),
+            "session_page_identity": {
+                "browser_session_id": browser.get("browser_session_id"),
+                "context_id": browser.get("context_id"),
+                "page_id": browser.get("page_id"),
+            },
+            "webauthn_participation": (
+                {
+                    "request_id": webauthn.get("request_id"),
+                    "status": webauthn.get("status"),
+                    "browser_engine": webauthn.get("browser_engine"),
+                }
+                if isinstance(webauthn, dict)
+                else None
+            ),
+        }
+
+    def to_bounded_evidence_dict(self) -> dict[str, Any]:
+        """Layer 2: compact evidence justifying, but not redefining, the verdict."""
+        return {
+            "expectation_evidence": list(self.expectation_evidence or []),
+            "signals": [signal.to_dict() for signal in self.evidence],
+            "action_evidence": self.action_evidence,
+            "freshness": self.freshness.to_dict(),
+        }
+
+    def to_layered_dict(self) -> dict[str, Any]:
+        """Formal three-layer representation for new consumers."""
+        return {
+            "core_receipt": self.to_core_dict(),
+            "bounded_evidence": self.to_bounded_evidence_dict(),
+            "artifacts": list(self.artifacts or []),
         }

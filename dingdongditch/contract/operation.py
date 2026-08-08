@@ -100,6 +100,9 @@ class Locator:
         return data
 
 
+MAX_FRAME_PATH_DEPTH = 8
+
+
 from dingdongditch.contract.wait import (  # noqa: E402
     TARGET_BASED_WAIT_CONDITIONS,
     WaitCondition,
@@ -122,6 +125,8 @@ class ActionType(str, Enum):
     CLOSE_PAGE = "close_page"
     SWITCH_TO_OPENER = "switch_to_opener"
     DOWNLOAD = "download"
+    UPLOAD_FILE = "upload_file"
+    SELECT_COMBOBOX_OPTION = "select_combobox_option"
 
 
 class KeyPressScope(str, Enum):
@@ -204,6 +209,8 @@ TARGET_BASED_ACTIONS = frozenset(
         ActionType.SET_CHECKED,
         ActionType.HOVER,
         ActionType.SCROLL_TO_TARGET,
+        ActionType.UPLOAD_FILE,
+        ActionType.SELECT_COMBOBOX_OPTION,
     }
 )
 
@@ -219,9 +226,14 @@ FRAME_SCOPED_ACTIONS = frozenset(
         ActionType.HOVER,
         ActionType.SCROLL_TO_TARGET,
         ActionType.POINTER_MOVE,
+        ActionType.UPLOAD_FILE,
+        ActionType.SELECT_COMBOBOX_OPTION,
     }
 )
 
+
+# Kept near Locator so frame-scoped contracts can import it without crossing
+# the deferred wait-condition import below.
 
 @dataclass(frozen=True)
 class Action:
@@ -230,6 +242,10 @@ class Action:
     type: ActionType
     locator: Locator | None = None
     text: str | None = None
+    # Opaque host-owned secret lookup for a fill action.  It is mutually
+    # exclusive with text and is never resolved during plan parsing.
+    secret_reference: Any | None = None
+    secret_timeout_ms: int = 5_000
     # press_key
     key: str | None = None
     key_scope: KeyPressScope | None = None
@@ -242,18 +258,30 @@ class Action:
     # wait_for
     wait_condition: WaitCondition | None = None
     wait_timeout_ms: int | None = None
-    # Optional same-page iframe element (main document). Nested frames unsupported.
+    # Legacy one-hop frame scope.  New callers should use frame_path for nesting.
     frame: Locator | None = None
+    # Explicit same-page frame hops from the main document to the target scope.
+    frame_path: tuple[Locator, ...] = ()
     # Explicit page-management actions.
     page_id: str | None = None
     download_request: Any | None = None
     pointer_request: Any | None = None
+    upload_authorization: Any | None = None
+    combobox_selection: Any | None = None
 
     def validate(self) -> None:
+        if self.type != ActionType.FILL and self.secret_reference is not None:
+            raise ValueError(f"{self.type.value} must not include secret_reference")
+        if self.type != ActionType.FILL and self.secret_timeout_ms != 5_000:
+            raise ValueError(f"{self.type.value} must not include secret_timeout_ms")
         if self.type != ActionType.DOWNLOAD and self.download_request is not None:
             raise ValueError(f"{self.type.value} must not include download_request")
         if self.type != ActionType.POINTER_MOVE and self.pointer_request is not None:
             raise ValueError(f"{self.type.value} must not include pointer_request")
+        if self.type != ActionType.UPLOAD_FILE and self.upload_authorization is not None:
+            raise ValueError(f"{self.type.value} must not include upload_authorization")
+        if self.type != ActionType.SELECT_COMBOBOX_OPTION and self.combobox_selection is not None:
+            raise ValueError(f"{self.type.value} must not include combobox_selection")
         if self.type == ActionType.NAVIGATE:
             self._forbid_locator_text_key_select_checked()
             self._forbid_wait_fields()
@@ -274,8 +302,26 @@ class Action:
             self._forbid_key_select_checked()
             self._forbid_wait_fields()
             self._validate_optional_frame()
-            if self.text is None:
-                raise ValueError("fill action requires text")
+            if (self.text is None) == (self.secret_reference is None):
+                raise ValueError("fill action requires exactly one of text or secret_reference")
+            if self.secret_reference is not None:
+                from dingdongditch.authentication.secrets import (
+                    SecretReference,
+                    coerce_secret_reference,
+                )
+
+                if not isinstance(self.secret_reference, (SecretReference, str)):
+                    raise ValueError("fill secret_reference must be an opaque secret reference")
+                try:
+                    coerce_secret_reference(self.secret_reference)
+                except Exception as exc:
+                    raise ValueError("fill secret_reference is invalid") from exc
+                if (
+                    not isinstance(self.secret_timeout_ms, int)
+                    or isinstance(self.secret_timeout_ms, bool)
+                    or not 10 <= self.secret_timeout_ms <= 60_000
+                ):
+                    raise ValueError("fill secret_timeout_ms must be between 10 and 60000")
         elif self.type == ActionType.PRESS_KEY:
             self._forbid_text_select_checked()
             self._forbid_wait_fields()
@@ -372,9 +418,9 @@ class Action:
                 raise ValueError(
                     "wait_for must declare the target on wait_condition, not action.locator"
                 )
-            if self.frame is not None:
+            if self.frame is not None or self.frame_path:
                 raise ValueError(
-                    "wait_for must declare frame on wait_condition, not action.frame"
+                    "wait_for must declare frame scope on wait_condition, not action"
                 )
             if self.wait_condition is None:
                 raise ValueError("wait_for requires wait_condition")
@@ -406,6 +452,28 @@ class Action:
                 raise ValueError("download action must not include text or checked")
             if any(v is not None for v in (self.key, self.key_scope, self.option_value, self.option_label, self.option_values, self.wait_condition, self.wait_timeout_ms, self.page_id)):
                 raise ValueError("download trigger details must be declared on download_request")
+        elif self.type == ActionType.UPLOAD_FILE:
+            from dingdongditch.contract.upload import UploadAuthorization
+            if not isinstance(self.upload_authorization, UploadAuthorization):
+                raise ValueError("upload_file action requires upload_authorization")
+            self._require_locator()
+            self._forbid_text_key_select_checked_key_scope()
+            self._forbid_wait_fields()
+            self._validate_optional_frame()
+            if self.page_id is not None:
+                raise ValueError("upload_file must not include page_id")
+            self.upload_authorization.validate_and_resolve()
+        elif self.type == ActionType.SELECT_COMBOBOX_OPTION:
+            from dingdongditch.contract.combobox import ComboboxSelection
+            if not isinstance(self.combobox_selection, ComboboxSelection):
+                raise ValueError("select_combobox_option requires combobox_selection")
+            self._require_locator()
+            self._forbid_text_key_select_checked_key_scope()
+            self._forbid_wait_fields()
+            self._validate_optional_frame()
+            if self.page_id is not None:
+                raise ValueError("select_combobox_option must not include page_id")
+            self.combobox_selection.validate()
         else:
             raise ValueError(f"unsupported action: {self.type}")
 
@@ -430,8 +498,17 @@ class Action:
             data["locator"] = self.locator.describe()
         if self.frame is not None:
             data["frame"] = self.frame.describe()
+        if self.frame_path:
+            data["frame_path"] = [frame.describe() for frame in self.frame_path]
         if self.text is not None:
             data["text"] = self.text
+        if self.secret_reference is not None:
+            from dingdongditch.authentication.secrets import coerce_secret_reference
+
+            data["secret_reference"] = coerce_secret_reference(
+                self.secret_reference
+            ).describe()
+            data["secret_timeout_ms"] = self.secret_timeout_ms
         if self.type == ActionType.PRESS_KEY:
             data["key"] = self.key
             data["key_scope"] = self.resolved_key_scope().value
@@ -456,6 +533,10 @@ class Action:
             data["download_request"] = self.download_request.describe()
         if self.type == ActionType.POINTER_MOVE:
             data["pointer_request"] = self.pointer_request.describe()
+        if self.type == ActionType.UPLOAD_FILE:
+            data["upload"] = self.upload_authorization.safe_evidence()
+        if self.type == ActionType.SELECT_COMBOBOX_OPTION:
+            data["combobox"] = self.combobox_selection.describe()
         return data
 
     def _require_locator(self) -> None:
@@ -464,12 +545,28 @@ class Action:
         self.locator.validate()
 
     def _validate_optional_frame(self) -> None:
+        if self.frame is not None and self.frame_path:
+            raise ValueError("frame and frame_path are mutually exclusive")
         if self.frame is not None:
             self.frame.validate()
+        if len(self.frame_path) > MAX_FRAME_PATH_DEPTH:
+            raise ValueError(
+                f"frame_path supports at most {MAX_FRAME_PATH_DEPTH} declared hops"
+            )
+        for frame in self.frame_path:
+            if not isinstance(frame, Locator):
+                raise ValueError("frame_path entries must be Locator values")
+            frame.validate()
 
     def _forbid_frame(self) -> None:
-        if self.frame is not None:
+        if self.frame is not None or self.frame_path:
             raise ValueError(f"{self.type.value} must not include a frame target")
+
+    def resolved_frame_path(self) -> tuple[Locator, ...]:
+        """Return the declared scope normalized to a path for backend use."""
+        if self.frame_path:
+            return self.frame_path
+        return (self.frame,) if self.frame is not None else ()
 
     def _forbid_wait_fields(self) -> None:
         if self.wait_condition is not None or self.wait_timeout_ms is not None:
@@ -566,19 +663,127 @@ class TargetAbsentGuard:
         return {"expectations": [item.describe() for item in self.expectations]}
 
 
-@dataclass(frozen=True)
-class OperationGuard:
-    """Narrow guard: execute when target exists, otherwise prove desired state."""
+MAX_GUARD_BRANCHES = 8
+MAX_GUARD_BRANCH_ACTIONS = 8
 
-    when_target_absent: TargetAbsentGuard
+
+@dataclass(frozen=True)
+class GuardBranch:
+    """One explicitly declared UI state and its bounded preparation actions.
+
+    A branch is deliberately *not* a nested workflow.  Its ``execute`` actions
+    are a finite, ordered preparation sequence which runs only after every
+    declared expectation matches.  The enclosing operation action still runs
+    afterwards.  This makes a branch useful for mutually-exclusive banners or
+    modals without letting a plan grow loops, jumps, or arbitrary control flow.
+    """
+
+    branch_id: str
+    when: tuple[Any, ...]
+    execute: tuple[Action, ...] = ()
 
     def validate(self) -> None:
-        if not isinstance(self.when_target_absent, TargetAbsentGuard):
-            raise ValueError("guard.when_target_absent is required")
-        self.when_target_absent.validate()
+        if not isinstance(self.branch_id, str) or not self.branch_id.strip():
+            raise ValueError("guard branch_id must be a non-empty string")
+        if not self.when:
+            raise ValueError(
+                f"guard branch {self.branch_id!r} requires non-empty when expectations"
+            )
+        if len(self.when) > MAX_GUARD_BRANCH_ACTIONS:
+            raise ValueError("guard branch when expectations exceeds bounded limit")
+        if len(self.execute) > MAX_GUARD_BRANCH_ACTIONS:
+            raise ValueError("guard branch execute exceeds bounded action limit")
+        for expectation in self.when:
+            expectation.validate()
+        for action in self.execute:
+            if not isinstance(action, Action):
+                raise ValueError("guard branch execute entries must be Action values")
+            action.validate()
+            if action.type not in TARGET_BASED_ACTIONS and not (
+                action.type == ActionType.PRESS_KEY
+                and action.resolved_key_scope() == KeyPressScope.TARGET
+            ):
+                raise ValueError(
+                    "guard branch execute supports only target-based actions "
+                    "or target-scoped press_key"
+                )
 
     def describe(self) -> dict[str, Any]:
-        return {"when_target_absent": self.when_target_absent.describe()}
+        return {
+            "branch_id": self.branch_id,
+            "when": {"expectations": [item.describe() for item in self.when]},
+            "execute": [item.describe() for item in self.execute],
+        }
+
+
+@dataclass(frozen=True)
+class OperationGuard:
+    """Explicit deterministic guard, in legacy or mutually-exclusive form.
+
+    ``when_target_absent`` is retained unchanged for existing optional actions.
+    ``branches`` models a finite set of mutually-exclusive observed UI states;
+    no branch is inferred, and an unexpected multiple match is terminal.
+    """
+
+    when_target_absent: TargetAbsentGuard | None = None
+    branches: tuple[GuardBranch, ...] = ()
+    otherwise: tuple[Action, ...] | None = None
+
+    def validate(self) -> None:
+        legacy = self.when_target_absent is not None
+        branching = bool(self.branches) or self.otherwise is not None
+        if legacy == branching:
+            raise ValueError(
+                "guard must declare exactly one of when_target_absent or branches"
+            )
+        if legacy:
+            if not isinstance(self.when_target_absent, TargetAbsentGuard):
+                raise ValueError("guard.when_target_absent must be a TargetAbsentGuard")
+            self.when_target_absent.validate()
+            return
+        if not self.branches:
+            raise ValueError("guard.branches must not be empty")
+        if len(self.branches) > MAX_GUARD_BRANCHES:
+            raise ValueError("guard.branches exceeds bounded branch limit")
+        ids = [branch.branch_id for branch in self.branches]
+        if len(ids) != len(set(ids)):
+            raise ValueError("guard branch_id values must be unique")
+        for branch in self.branches:
+            if not isinstance(branch, GuardBranch):
+                raise ValueError("guard.branches entries must be GuardBranch values")
+            branch.validate()
+        if self.otherwise is not None:
+            if len(self.otherwise) > MAX_GUARD_BRANCH_ACTIONS:
+                raise ValueError("guard.otherwise exceeds bounded action limit")
+            for action in self.otherwise:
+                if not isinstance(action, Action):
+                    raise ValueError("guard.otherwise entries must be Action values")
+                action.validate()
+                if action.type not in TARGET_BASED_ACTIONS and not (
+                    action.type == ActionType.PRESS_KEY
+                    and action.resolved_key_scope() == KeyPressScope.TARGET
+                ):
+                    raise ValueError(
+                        "guard.otherwise supports only target-based actions "
+                        "or target-scoped press_key"
+                    )
+
+    @property
+    def is_legacy_target_absent(self) -> bool:
+        return self.when_target_absent is not None
+
+    def describe(self) -> dict[str, Any]:
+        if self.is_legacy_target_absent:
+            assert self.when_target_absent is not None
+            return {"when_target_absent": self.when_target_absent.describe()}
+        return {
+            "branches": [branch.describe() for branch in self.branches],
+            "otherwise": (
+                [action.describe() for action in self.otherwise]
+                if self.otherwise is not None
+                else None
+            ),
+        }
 
 
 @dataclass
@@ -600,6 +805,11 @@ class Operation:
     page_precondition: Any | None = None
     target_preparation: TargetPreparation = field(default_factory=TargetPreparation)
     guard: OperationGuard | None = None
+    # Optional Layer-3 capture.  It is never used by verification.
+    network_artifact: Any | None = None
+    # Explicit host-authentication participation after dispatch.  This is a
+    # bounded transport request, not credential material or browser control.
+    webauthn: Any | None = None
 
     def validate(self) -> None:
         if not self.operation_id:
@@ -643,6 +853,18 @@ class Operation:
             if self.action.locator is None or self.action.type not in TARGET_BASED_ACTIONS:
                 raise ValueError("guard is supported only for target-based actions")
             self.guard.validate()
+        if self.network_artifact is not None:
+            from dingdongditch.contract.network import NetworkArtifactRequest
+
+            if not isinstance(self.network_artifact, NetworkArtifactRequest):
+                raise ValueError("network_artifact must be a NetworkArtifactRequest")
+            self.network_artifact.validate()
+        if self.webauthn is not None:
+            from dingdongditch.authentication.webauthn import WebAuthnParticipationRequest
+
+            if not isinstance(self.webauthn, WebAuthnParticipationRequest):
+                raise ValueError("webauthn must be a WebAuthnParticipationRequest")
+            self.webauthn.validate()
         from dingdongditch.contract.page import PageTransition, PageTransitionPolicy
 
         transition = self.page_transition or PageTransition()
@@ -702,4 +924,10 @@ class Operation:
             ),
             "target_preparation": self.target_preparation.describe(),
             "guard": self.guard.describe() if self.guard is not None else None,
+            "network_artifact": (
+                self.network_artifact.describe()
+                if self.network_artifact is not None
+                else None
+            ),
+            "webauthn": self.webauthn.describe() if self.webauthn is not None else None,
         }

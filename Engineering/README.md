@@ -22,6 +22,9 @@ Governing documents for long-term architectural consistency.
 | [`Phase 3/DECLARED_WAIT_CONDITIONS.md`](./Phase%203/DECLARED_WAIT_CONDITIONS.md) | Host-authored wait_for conditions |
 | [`Phase 3/IFRAME_TARGETING.md`](./Phase%203/IFRAME_TARGETING.md) | Declared same-page iframe targeting |
 | [`Phase 3/PLAN_RUNNER_CLI.md`](./Phase%203/PLAN_RUNNER_CLI.md) | Website-neutral JSON plan-runner CLI |
+| [`Phase 3/STATEFUL_SESSIONS.md`](./Phase%203/STATEFUL_SESSIONS.md) | Host-owned incremental browser sessions |
+| [`THREE_LAYER_RECEIPT_ARCHITECTURE.md`](./THREE_LAYER_RECEIPT_ARCHITECTURE.md) | Core receipt, bounded evidence, and artifact boundary |
+| [`REMAINING_INFRASTRUCTURE_BOUNDARIES.md`](./REMAINING_INFRASTRUCTURE_BOUNDARIES.md) | Network, portable state, profiles, secrets, and WebAuthn boundaries |
 
 **How to use:** Principles say how to build. Non-goals say what not to become.
 Phase 2 says what the project *is* responsible for. Research explains why.

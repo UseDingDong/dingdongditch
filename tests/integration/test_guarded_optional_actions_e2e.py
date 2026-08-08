@@ -2,7 +2,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from dingdongditch import (
-    Action, ActionType, BrowserConfig, ExecutionPlan, Expectation,
+    Action, ActionType, BrowserConfig, ExecutionPlan, Expectation, GuardBranch,
     Locator, LocatorStrategy, Operation, OperationGuard, TargetAbsentGuard,
     execute_plan,
 )
@@ -11,6 +11,7 @@ from dingdongditch.backends.playwright_backend import PlaywrightBackend
 from dingdongditch.contract.expectation import ExpectationType
 from dingdongditch.contract.plan import PlanVerdict
 from dingdongditch.contract.verdict import Verdict
+from dingdongditch.evidence.models import ExpectationResult
 
 
 def _exists(selector: str, expected: bool) -> Expectation:
@@ -172,3 +173,125 @@ def test_unguarded_missing_target_behavior_is_unchanged(fixture_url):
     receipt = execute_plan(ExecutionPlan("unguarded", [_navigate(fixture_url), op]))
     assert receipt.steps[1].receipt.failure_kind == "zero_after_primary"
     assert "guarded" not in receipt.steps[1].receipt.action_evidence
+
+
+def _generic_guarded_operation(url: str, guard: OperationGuard) -> Operation:
+    return Operation(
+        "declared-branches",
+        url,
+        Action(type=ActionType.CLICK, locator=Locator(LocatorStrategy.TEST_ID, "noop-control")),
+        expectations=[
+            Expectation(
+                type=ExpectationType.ELEMENT_VISIBLE,
+                locator=Locator(LocatorStrategy.TEST_ID, "result-item"),
+                visible=True,
+            )
+        ],
+        guard=guard,
+    )
+
+
+def _present(target: str, expected: bool = True) -> Expectation:
+    return Expectation(
+        type=ExpectationType.ELEMENT_EXISTS,
+        locator=Locator(LocatorStrategy.TEST_ID, target),
+        exists=expected,
+    )
+
+
+def _click_target() -> Action:
+    return Action(type=ActionType.CLICK, locator=Locator(LocatorStrategy.TEST_ID, "target-control"))
+
+
+def test_declared_guard_selects_exactly_one_branch_and_retains_plan_session(fixture_url):
+    guard = OperationGuard(
+        branches=(
+            GuardBranch("banner-a", (_present("target-control"),), (_click_target(),)),
+            GuardBranch("banner-b", (_present("not-present"),)),
+        )
+    )
+    receipt = execute_plan(
+        ExecutionPlan("declared-branch", [_navigate(fixture_url), _generic_guarded_operation(fixture_url, guard)])
+    )
+    assert receipt.plan_verdict is PlanVerdict.VERIFIED
+    step = receipt.steps[1].receipt
+    assert step is not None
+    evidence = step.action_evidence["guard"]
+    assert evidence["selected_branch"] == "banner-a"
+    assert evidence["matched_branch_ids"] == ["banner-a"]
+    assert evidence["skipped_branches"] == ["banner-b"]
+    assert evidence["branch_actions"][0]["dispatched"] is True
+    assert receipt.steps[0].browser_session_id == receipt.steps[1].browser_session_id
+
+
+def test_declared_guard_uses_explicit_otherwise_only(fixture_url):
+    guard = OperationGuard(
+        branches=(GuardBranch("never", (_present("not-present"),)),),
+        otherwise=(_click_target(),),
+    )
+    receipt = execute_plan(
+        ExecutionPlan("guard-fallback", [_navigate(fixture_url), _generic_guarded_operation(fixture_url, guard)])
+    )
+    step = receipt.steps[1].receipt
+    assert step is not None and step.verdict is Verdict.VERIFIED
+    evidence = step.action_evidence["guard"]
+    assert evidence["selected_branch"] == "otherwise"
+    assert evidence["fallback_used"] is True
+
+
+def test_declared_guard_no_match_is_structured_and_never_dispatches(fixture_url):
+    guard = OperationGuard(branches=(GuardBranch("never", (_present("not-present"),)),))
+    receipt = execute_plan(
+        ExecutionPlan("guard-none", [_navigate(fixture_url), _generic_guarded_operation(fixture_url, guard)])
+    )
+    step = receipt.steps[1].receipt
+    assert step is not None and step.verdict is Verdict.NOT_VERIFIED
+    assert step.failure_kind == "guard_no_branch_matched"
+    evidence = step.action_evidence["guard"]
+    assert evidence["selected_branch"] is None
+    assert evidence["primary_action_dispatched"] is False
+
+
+def test_declared_guard_multiple_matches_fail_closed(fixture_url):
+    guard = OperationGuard(
+        branches=(
+            GuardBranch("one", (_present("target-control"),)),
+            GuardBranch("two", (_present("noop-control"),)),
+        )
+    )
+    receipt = execute_plan(
+        ExecutionPlan("guard-ambiguous", [_navigate(fixture_url), _generic_guarded_operation(fixture_url, guard)])
+    )
+    step = receipt.steps[1].receipt
+    assert step is not None and step.verdict is Verdict.INDETERMINATE
+    assert step.failure_kind == "guard_ambiguous_matches"
+    assert step.action_evidence["guard"]["ambiguous_matches"] == ["one", "two"]
+
+
+def test_declared_guard_stale_condition_fails_closed(fixture_url):
+    guard = OperationGuard(
+        branches=(GuardBranch("present", (_present("target-control"),), (_click_target(),)),)
+    )
+    stale = ExpectationResult(
+        expectation_id="stale",
+        expectation_type="element_exists",
+        expected={"exists": True},
+        observed={},
+        result="indeterminate",
+        freshness_ok=False,
+    )
+    backend = PlaywrightBackend()
+    backend.start()
+    try:
+        backend.ensure_on_url(fixture_url, 10_000)
+        with patch("dingdongditch.runtime.executor.evaluate_expectations", return_value=[stale]):
+            receipt = execute_plan(
+                ExecutionPlan("guard-stale", [_generic_guarded_operation(fixture_url, guard)]),
+                backend=backend,
+            )
+    finally:
+        backend.stop()
+    step = receipt.steps[0].receipt
+    assert step is not None and step.verdict is Verdict.INDETERMINATE
+    assert step.failure_kind == "guard_condition_indeterminate"
+    assert step.action_evidence["guard"]["failure_reason"] == "guard_condition_indeterminate"

@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any
 
 from dingdongditch.contract.modes import TextMatchMode, UrlMatchMode
-from dingdongditch.contract.operation import Locator
+from dingdongditch.contract.operation import Locator, MAX_FRAME_PATH_DEPTH
 
 DEFAULT_WAIT_TIMEOUT_MS = 5_000
 MIN_WAIT_TIMEOUT_MS = 100
@@ -82,22 +82,22 @@ class WaitCondition:
     selected_value: str | None = None
     in_viewport: bool | None = None
     load_state: LoadState | None = None
-    # Optional same-page iframe element (main document). Nested frames unsupported.
+    # Legacy one-hop scope; frame_path explicitly declares nested hops.
     frame: Locator | None = None
+    frame_path: tuple[Locator, ...] = ()
 
     def validate(self) -> None:
         if self.type in TARGET_BASED_WAIT_CONDITIONS:
             if self.locator is None:
                 raise ValueError(f"{self.type.value} wait requires a locator")
             self.locator.validate()
-            if self.frame is not None:
-                self.frame.validate()
+            self._validate_frame_scope()
         else:
             if self.locator is not None:
                 raise ValueError(f"{self.type.value} wait must not include a locator")
-            if self.frame is not None:
+            if self.frame is not None or self.frame_path:
                 raise ValueError(
-                    f"{self.type.value} wait is page-scoped and must not include a frame"
+                    f"{self.type.value} wait is page-scoped and must not include a frame scope"
                 )
 
         extras = {
@@ -192,6 +192,8 @@ class WaitCondition:
             data["locator"] = self.locator.describe()
         if self.frame is not None:
             data["frame"] = self.frame.describe()
+        if self.frame_path:
+            data["frame_path"] = [frame.describe() for frame in self.frame_path]
         if self.type == WaitConditionType.TEXT_PRESENT:
             data["text_value"] = self.text_value
             data["text_match"] = self.text_match.value
@@ -218,6 +220,25 @@ class WaitCondition:
         ):
             pass
         return data
+
+    def _validate_frame_scope(self) -> None:
+        if self.frame is not None and self.frame_path:
+            raise ValueError("frame and frame_path are mutually exclusive")
+        if self.frame is not None:
+            self.frame.validate()
+        if len(self.frame_path) > MAX_FRAME_PATH_DEPTH:
+            raise ValueError(
+                f"frame_path supports at most {MAX_FRAME_PATH_DEPTH} declared hops"
+            )
+        for frame in self.frame_path:
+            if not isinstance(frame, Locator):
+                raise ValueError("frame_path entries must be Locator values")
+            frame.validate()
+
+    def resolved_frame_path(self) -> tuple[Locator, ...]:
+        if self.frame_path:
+            return self.frame_path
+        return (self.frame,) if self.frame is not None else ()
 
 
 def validate_wait_timeout_ms(timeout_ms: int | None) -> int:

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Deterministic ATS Fixture</title>
+<style>[role=listbox]{border:1px solid #888;max-width:30rem}[role=option]{padding:.3rem;cursor:pointer}.chip{padding:.3rem;background:#def}</style>
+<body><h1>Application</h1>
+<label>Name <input data-testid="candidate-name"></label>
+<div data-testid="city-field"><label>City <input data-testid="city" role="combobox" aria-controls="city-options" aria-expanded="false" autocomplete="off"></label><div id="city-options" role="listbox" hidden></div></div>
+<div data-testid="country-field"><label>Country <input data-testid="country" role="combobox" aria-controls="country-options" aria-expanded="false" autocomplete="off"></label><div id="country-options" role="listbox" hidden></div></div>
+<div data-testid="answer-field"><label>Authorized answer <input data-testid="answer" role="combobox" aria-controls="answer-options" aria-expanded="false" readonly></label><div id="answer-options" role="listbox" hidden></div></div>
+<div data-testid="broken-field"><label>Broken <input data-testid="broken" role="combobox" aria-controls="broken-options" aria-expanded="false"></label><div id="broken-options" role="listbox" hidden></div></div>
+<div data-testid="upload-widget"><label>Resume <input id="resume-upload" type="file" accept=".txt"></label></div>
+<pre data-testid="final-state"></pre>
+<script>
+const choices={city:['New York, New York, United States','New York Mills, Minnesota','New York County, New York'],country:['United States','United Kingdom','United Arab Emirates'],answer:['Yes','No'],broken:['Chosen']};
+function install(name, delay=0, persist=true){const input=document.querySelector(`[data-testid=${name}]`), list=document.querySelector(`#${name}-options`);let timer;
+ const open=()=>{clearTimeout(timer);timer=setTimeout(()=>{const q=input.value.toLowerCase();list.innerHTML='';choices[name].filter(x=>!q||x.toLowerCase().includes(q)).forEach(text=>{const o=document.createElement('div');o.role='option';o.textContent=text;o.onclick=()=>{if(persist){input.value=text;list.hidden=true;input.setAttribute('aria-expanded','false');render()}};list.append(o)});list.hidden=false;input.setAttribute('aria-expanded','true')},delay)};
+ input.addEventListener('focus',open);input.addEventListener('input',open);if(input.readOnly)input.addEventListener('click',open)}
+install('city',20);install('country',180);install('answer',20);install('broken',20,false);
+document.querySelector('#resume-upload').addEventListener('change',e=>{const name=e.target.files[0]?.name;if(!name)return;const w=document.querySelector('[data-testid=upload-widget]');w.innerHTML=`<span class="chip" data-testid="resume-chip">${name}</span><button type="button" aria-label="Remove file">Remove file</button><input id="replacement-upload" type="file" accept=".txt" hidden>`;render()});
+function render(){document.querySelector('[data-testid=final-state]').textContent=JSON.stringify({name:document.querySelector('[data-testid=candidate-name]').value,city:document.querySelector('[data-testid=city]').value,country:document.querySelector('[data-testid=country]').value,answer:document.querySelector('[data-testid=answer]').value,resume:document.querySelector('[data-testid=resume-chip]')?.textContent||''})}
+</script></body></html>

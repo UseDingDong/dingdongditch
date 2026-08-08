@@ -1,0 +1,50 @@
+{
+  "browser": {
+    "provider": "playwright",
+    "engine": "chromium",
+    "channel": "bundled",
+    "headless": true
+  },
+  "plan": {
+    "plan_id": "authorized-file-upload-template",
+    "failure_policy": "stop_on_failure",
+    "operations": [
+      {
+        "operation_id": "navigate-upload-fixture",
+        "url": "../upload/upload_fixture.html",
+        "action": {"type": "navigate"},
+        "expectations": [
+          {"type": "url", "url_value": "upload_fixture.html", "url_match": "contains"}
+        ]
+      },
+      {
+        "operation_id": "upload-authorized-file",
+        "url": "../upload/upload_fixture.html",
+        "action": {
+          "type": "upload_file",
+          "locator": {"strategy": "test_id", "value": "example-upload"},
+          "file_paths": ["/absolute/path/to/harmless-upload.txt"],
+          "allowed_roots": ["/absolute/path/to"]
+        },
+        "expectations": [
+          {
+            "type": "upload_file_names",
+            "locator": {"strategy": "test_id", "value": "example-upload"},
+            "file_names": ["harmless-upload.txt"]
+          },
+          {
+            "type": "upload_file_count",
+            "locator": {"strategy": "test_id", "value": "example-upload"},
+            "file_count": 1
+          },
+          {
+            "type": "text",
+            "locator": {"strategy": "test_id", "value": "upload-result"},
+            "text_value": "harmless-upload.txt",
+            "text_match": "contains"
+          }
+        ]
+      }
+    ]
+  }
+}

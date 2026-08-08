@@ -117,7 +117,7 @@ def test_press_key_target_enter(fixture_url, engine):
         assert r.action_evidence["key"] == "Enter"
         assert r.action_evidence["dispatch_scope"] == "target"
         assert r.browser["engine"] == engine.value
-        assert r.schema_version == "1.7.0"
+        assert r.schema_version == "1.8.0"
     finally:
         backend.stop()
 

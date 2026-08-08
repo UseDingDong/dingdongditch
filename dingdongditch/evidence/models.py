@@ -52,6 +52,7 @@ class ExpectationResult:
     evidence_timestamp_ms: int | None = None
     explanation: str = ""
     freshness_ok: bool | None = None
+    failure_evidence: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

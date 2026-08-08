@@ -183,6 +183,12 @@ class TargetResolutionTrace:
     candidate_summaries: list[dict[str, Any]] = field(default_factory=list)
     # Present when resolution was scoped to a declared iframe element.
     frame_locator: dict[str, Any] | None = None
+    # Present for explicit nested frame resolution.  Values are safe, bounded
+    # fingerprints rather than browser Frame objects or raw frame URLs.
+    frame_path: list[dict[str, Any]] | None = None
+    frame_path_depth: int = 0
+    resolved_frame_hops: list[dict[str, Any]] = field(default_factory=list)
+    failure_hop: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         stages: list[dict[str, Any]] = []
@@ -211,6 +217,11 @@ class TargetResolutionTrace:
         }
         if self.frame_locator is not None:
             data["frame_locator"] = self.frame_locator
+        if self.frame_path is not None:
+            data["frame_path"] = list(self.frame_path)
+            data["frame_path_depth"] = self.frame_path_depth
+            data["resolved_frame_hops"] = list(self.resolved_frame_hops)
+            data["failure_hop"] = self.failure_hop
         return data
 
 

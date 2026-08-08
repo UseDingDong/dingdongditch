@@ -53,6 +53,7 @@ Desktop.ini
 # Local agent and assistant state
 .agents/
 .codex/
+.claude/
 
 # Logs, process state, and browser traces
 *.log
@@ -83,22 +84,16 @@ cookies*.json
 
 # Root-level runtime validation evidence
 /fresh-session.json
-/continuous_multisite*_done.json
-/continuous_multisite*_receipts.json
-/five_minute_continuous_receipts_*.json
-/five_minute_continuous_summary_*.json
+/continuous_multisite_*
+/five_minute_*
 /gemini_conversation_receipts.json
 /gemini_conversation_summary.json
+/gemini_*.log
 /gemini_monkeytype_github_diagnostics/
 /gemini_monkeytype_github_postrun_verification.json
 /gemini_monkeytype_github_receipts*.json
 /gemini_monkeytype_github_summary*.json
-/ten_minute_activity_log_*.json
-/ten_minute_continuous_receipts_*.json
-/ten_minute_continuous_summary_*.json
-/ten_minute_final_execution_report_*.json
-/ten_minute_postrun_verification_*.json
-/ten_minute_website_log_*.json
+/ten_minute_*
 
 # Runtime output and local evidence
 artifacts/

@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
-from dingdongditch.contract.operation import Locator
+from dingdongditch.contract.operation import Locator, MAX_FRAME_PATH_DEPTH
 
 
 MAX_PAGE_CONDITIONS = 32
@@ -44,6 +44,7 @@ class PageCondition:
     query_value: str | None = None
     locator: Locator | None = None
     frame: Locator | None = None
+    frame_path: tuple[Locator, ...] = ()
 
     def validate(self) -> None:
         if not isinstance(self.condition_id, str) or not self.condition_id.strip():
@@ -58,7 +59,7 @@ class PageCondition:
             PageConditionType.QUERY_PARAM_EQUALS: frozenset(
                 {"query_name", "query_value"}
             ),
-            PageConditionType.ELEMENT_VISIBLE: frozenset({"locator", "frame"}),
+            PageConditionType.ELEMENT_VISIBLE: frozenset({"locator", "frame", "frame_path"}),
         }
         values = {
             "url_value": self.url_value,
@@ -68,6 +69,7 @@ class PageCondition:
             "query_value": self.query_value,
             "locator": self.locator,
             "frame": self.frame,
+            "frame_path": self.frame_path if self.frame_path else None,
         }
         permitted = allowed[self.type]
         for name, value in values.items():
@@ -126,6 +128,16 @@ class PageCondition:
                 if not isinstance(self.frame, Locator):
                     raise ValueError("element_visible frame must be a Locator")
                 self.frame.validate()
+            if self.frame is not None and self.frame_path:
+                raise ValueError("frame and frame_path are mutually exclusive")
+            if len(self.frame_path) > MAX_FRAME_PATH_DEPTH:
+                raise ValueError(
+                    f"frame_path supports at most {MAX_FRAME_PATH_DEPTH} declared hops"
+                )
+            for frame in self.frame_path:
+                if not isinstance(frame, Locator):
+                    raise ValueError("frame_path entries must be Locator values")
+                frame.validate()
 
     def describe(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -149,7 +161,14 @@ class PageCondition:
             data["locator"] = self.locator.describe() if self.locator else None
             if self.frame is not None:
                 data["frame"] = self.frame.describe()
+            if self.frame_path:
+                data["frame_path"] = [frame.describe() for frame in self.frame_path]
         return data
+
+    def resolved_frame_path(self) -> tuple[Locator, ...]:
+        if self.frame_path:
+            return self.frame_path
+        return (self.frame,) if self.frame is not None else ()
 
 
 @dataclass(frozen=True)

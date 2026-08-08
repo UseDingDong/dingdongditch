@@ -13,6 +13,7 @@ from dingdongditch.contract.browser import (
     BrowserConfigError,
     BrowserEngine,
     dingdong_profile_directory,
+    persistent_profile_capability,
 )
 from dingdongditch.plan_json import browser_config_from_dict
 
@@ -82,11 +83,18 @@ def test_persistent_context_is_active_without_browser_handle():
     assert backend.is_started is True
 
 
-def test_persistent_profiles_are_chromium_only():
-    with pytest.raises(BrowserConfigError, match="requires engine=chromium"):
-        BrowserConfig(
-            engine=BrowserEngine.FIREFOX, profile=BrowserProfile.DINGDONG
-        ).validate()
+@pytest.mark.parametrize("engine", [BrowserEngine.CHROMIUM, BrowserEngine.FIREFOX, BrowserEngine.WEBKIT])
+def test_isolated_persistent_profiles_are_engine_specific(engine):
+    config = BrowserConfig(engine=engine, profile=BrowserProfile.DINGDONG)
+    config.validate()
+    assert persistent_profile_capability(engine, BrowserProfile.DINGDONG)["status"] == "supported"
+
+
+@pytest.mark.parametrize("engine", [BrowserEngine.FIREFOX, BrowserEngine.WEBKIT])
+def test_existing_default_profile_is_explicitly_unsupported_outside_chromium(engine):
+    with pytest.raises(BrowserConfigError, match="profile=default requires engine=chromium"):
+        BrowserConfig(engine=engine, profile=BrowserProfile.DEFAULT).validate()
+    assert persistent_profile_capability(engine, BrowserProfile.DEFAULT)["status"] == "unsupported"
 
 
 def test_default_profile_uses_existing_chrome_default_directory(tmp_path):

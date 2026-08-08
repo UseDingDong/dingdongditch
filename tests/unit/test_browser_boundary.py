@@ -265,7 +265,7 @@ def test_omitted_config_defaults_in_execute_operation(fixture_url):
     assert receipt.browser["channel"] == "bundled"
     assert receipt.browser["headless"] is True
     assert receipt.browser["browser_session_id"]
-    assert receipt.schema_version == "1.7.0"
+    assert receipt.schema_version == "1.8.0"
 
 
 def test_explicit_browser_config_headless_false_metadata(fixture_url):

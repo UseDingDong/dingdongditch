@@ -24,6 +24,27 @@ def test_action_frame_allowed_on_click():
     Action(type=ActionType.CLICK, locator=_tid("a"), frame=_tid("f")).validate()
 
 
+def test_nested_frame_path_is_valid_and_normalized():
+    action = Action(
+        type=ActionType.CLICK,
+        locator=_tid("a"),
+        frame_path=(_tid("outer"), _tid("inner")),
+    )
+    action.validate()
+    assert [item.value for item in action.resolved_frame_path()] == ["outer", "inner"]
+    assert len(action.describe()["frame_path"]) == 2
+
+
+def test_frame_and_frame_path_are_mutually_exclusive():
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        Action(
+            type=ActionType.CLICK,
+            locator=_tid("a"),
+            frame=_tid("outer"),
+            frame_path=(_tid("inner"),),
+        ).validate()
+
+
 def test_navigate_rejects_frame():
     with pytest.raises(ValueError, match="must not include a frame"):
         Action(type=ActionType.NAVIGATE, frame=_tid("f")).validate()
@@ -124,3 +145,33 @@ def test_plan_json_parses_frame_on_action_and_wait():
     plan = plan_document_from_dict(doc)
     assert plan.operations[0].action.frame.value == "frame"
     assert plan.operations[1].action.wait_condition.frame.value == "frame"
+
+
+def test_plan_json_parses_nested_frame_path_on_action_wait_and_expectation():
+    doc = {
+        "browser": {"provider": "playwright", "engine": "chromium", "channel": "bundled"},
+        "plan": {
+            "plan_id": "nested-frame-unit",
+            "operations": [{
+                "operation_id": "nested",
+                "url": "https://example.com/",
+                "action": {
+                    "type": "click", "locator": {"strategy": "test_id", "value": "button"},
+                    "frame_path": [
+                        {"strategy": "test_id", "value": "outer"},
+                        {"strategy": "test_id", "value": "inner"},
+                    ],
+                },
+                "expectations": [{
+                    "type": "element_exists", "locator": {"strategy": "test_id", "value": "button"}, "exists": True,
+                    "frame_path": [
+                        {"strategy": "test_id", "value": "outer"},
+                        {"strategy": "test_id", "value": "inner"},
+                    ],
+                }],
+            }],
+        },
+    }
+    plan = plan_document_from_dict(doc)
+    assert len(plan.operations[0].action.frame_path) == 2
+    assert len(plan.operations[0].expectations[0].frame_path) == 2

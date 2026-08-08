@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
+import hashlib
+import json
 import threading
 import time
 import uuid
@@ -9,6 +11,7 @@ from pathlib import Path
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
@@ -23,6 +26,7 @@ from dingdongditch.backends.target_resolver import (
     _primary_playwright_locator,
     merge_frame_trace,
     resolve_frame,
+    resolve_frame_path,
     resolve_target,
     resolve_target_identity,
 )
@@ -40,7 +44,11 @@ from dingdongditch.contract.browser import (
     is_persistent_profile,
     profile_value,
 )
-from dingdongditch.authentication import AuthenticationCapability, AuthenticationError
+from dingdongditch.authentication import (
+    AuthenticationCapability,
+    AuthenticationError,
+    AuthenticationFailureKind,
+)
 from dingdongditch.contract.operation import (
     ActionType,
     KeyPressScope,
@@ -94,7 +102,8 @@ from dingdongditch.contract.download import (
 from dingdongditch.contract.pointer import PointerOrigin
 from dingdongditch.evidence.collector import EvidenceCollector
 from dingdongditch.evidence.models import SignalAvailability, SignalKind
-from dingdongditch.runtime.publication import commit_file
+from dingdongditch.evidence.network import safe_network_record
+from dingdongditch.runtime.publication import commit_file, publish_json
 from dingdongditch.runtime.file_lease import (
     FileLease,
     LeaseUnavailableError,
@@ -177,11 +186,26 @@ def launch_playwright_browser(playwright: Playwright, config: BrowserConfig) -> 
 def launch_playwright_persistent_context(
     playwright: Playwright, config: BrowserConfig, *, user_data_dir: Path | None = None
 ) -> BrowserContext:
-    """Launch the Chromium persistent context selected by ``config.profile``."""
+    """Launch an engine-specific, isolated persistent context.
+
+    ``profile=default`` remains Chromium-only because it means the existing
+    Chrome Default directory.  Named and DingDong profiles use Playwright's
+    documented persistent-context API for the selected bundled engine.
+    """
+    browser_type = {
+        BrowserEngine.CHROMIUM: playwright.chromium,
+        BrowserEngine.FIREFOX: playwright.firefox,
+        BrowserEngine.WEBKIT: playwright.webkit,
+    }.get(config.engine)
+    if browser_type is None:
+        raise BrowserConfigError(
+            f"no persistent context mapping for {config.engine.value}",
+            failure_kind=BrowserFailureKind.UNSUPPORTED_ENGINE_CHANNEL_COMBINATION,
+        )
     if config.profile == BrowserProfile.DINGDONG:
-        user_data_dir = dingdong_profile_directory()
+        user_data_dir = dingdong_profile_directory(config.engine)
         user_data_dir.mkdir(parents=True, exist_ok=True)
-        return playwright.chromium.launch_persistent_context(
+        return browser_type.launch_persistent_context(
             str(user_data_dir), headless=config.headless, accept_downloads=True
         )
     if config.profile == BrowserProfile.DEFAULT:
@@ -201,7 +225,7 @@ def launch_playwright_persistent_context(
     if isinstance(config.profile, str) and config.profile not in {p.value for p in BrowserProfile}:
         if user_data_dir is None:
             raise BrowserConfigError("named profile directory was not prepared", failure_kind=BrowserFailureKind.BROWSER_CONTEXT_CREATION_FAILED)
-        return playwright.chromium.launch_persistent_context(
+        return browser_type.launch_persistent_context(
             str(user_data_dir), headless=config.headless, accept_downloads=True
         )
     raise BrowserConfigError(
@@ -215,8 +239,29 @@ class NetworkRecord:
     method: str
     url: str
     status: int | None
-    recorded_at_ms: int
+    request_observed_at_ms: int
+    response_observed_at_ms: int | None = None
     content_type: str | None = None
+    request_failed: bool = False
+    request_observed: bool = True
+
+    @property
+    def recorded_at_ms(self) -> int:
+        """Compatibility timestamp: response when available, else request."""
+        return self.response_observed_at_ms or self.request_observed_at_ms
+
+    def to_runtime_dict(self) -> dict[str, Any]:
+        return {
+            "method": self.method,
+            "url": self.url,
+            "status": self.status,
+            "request_observed_at_ms": self.request_observed_at_ms,
+            "response_observed_at_ms": self.response_observed_at_ms,
+            "recorded_at_ms": self.recorded_at_ms,
+            "content_type": self.content_type,
+            "request_failed": self.request_failed,
+            "request_observed": self.request_observed,
+        }
 
 
 @dataclass
@@ -274,6 +319,14 @@ class PlaywrightBackend:
     Supports one retained session across ordered operations.
     """
 
+    # The synchronous Playwright API permits many browsers/contexts from one
+    # driver, but rejects starting a second driver on the same thread. Share
+    # only the process-local driver; every backend still owns and closes its
+    # own browser, context, pages, profile lease, and artifacts.
+    _driver_lock = threading.RLock()
+    _shared_playwright: Playwright | None = None
+    _shared_playwright_refcount = 0
+
     def __init__(
         self,
         browser_config: BrowserConfig | None = None,
@@ -298,11 +351,13 @@ class PlaywrightBackend:
         )
         self.trusted_download_config.validate()
         self._playwright: Playwright | None = None
+        self._playwright_lease_acquired = False
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
         self._network: list[NetworkRecord] = []
-        self._network_limit = 2_000
+        self._network_limit = 512
+        self._network_by_request: dict[object, NetworkRecord] = {}
         self.backend_identity = "playwright-sync"
         self.browser_identity = browser_config.engine.value
         self.browser_session_id: str | None = None
@@ -344,6 +399,7 @@ class PlaywrightBackend:
         self._page_ids_by_object.clear()
         self._dialog_history.clear()
         self._network.clear()
+        self._network_by_request.clear()
         self._pointer_position = None
         self._pointer_page_id = None
         self._atomic_snapshot_count = 0
@@ -527,7 +583,10 @@ class PlaywrightBackend:
         named_profile = isinstance(self.browser_config.profile, str) and self.browser_config.profile not in {p.value for p in BrowserProfile}
         if named_profile:
             try:
-                self._profile_data_dir = self.authentication.acquire_profile(self.browser_config.profile)
+                self._profile_data_dir = self.authentication.acquire_profile(
+                    self.browser_config.profile,
+                    engine=self.browser_config.engine.value,
+                )
             except AuthenticationError as exc:
                 profile_failures = {
                     "profile_in_use": BrowserFailureKind.PROFILE_IN_USE,
@@ -542,7 +601,7 @@ class PlaywrightBackend:
                 ) from exc
         elif is_persistent_profile(self.browser_config.profile):
             profile_dir = (
-                dingdong_profile_directory()
+                dingdong_profile_directory(self.browser_config.engine)
                 if self.browser_config.profile == BrowserProfile.DINGDONG
                 else default_chrome_user_data_directory()
             )
@@ -563,7 +622,12 @@ class PlaywrightBackend:
         self._event("backend_start_started_at")
         self._last_start_was_new = True
         try:
-            self._playwright = sync_playwright().start()
+            with type(self)._driver_lock:
+                if type(self)._shared_playwright is None:
+                    type(self)._shared_playwright = sync_playwright().start()
+                type(self)._shared_playwright_refcount += 1
+                self._playwright_lease_acquired = True
+                self._playwright = type(self)._shared_playwright
             self._event("playwright_started_at")
         except Exception as exc:
             self.lifecycle_state = LifecycleState.FAILED
@@ -596,7 +660,20 @@ class PlaywrightBackend:
 
         try:
             if self._context is None:
-                self._context = self._browser.new_context(accept_downloads=True)
+                initial_state = self.authentication.pending_initial_storage_state()
+                self._context = self._browser.new_context(
+                    accept_downloads=True,
+                    **({"storage_state": initial_state} if initial_state is not None else {}),
+                )
+                if initial_state is not None:
+                    self.authentication.confirm_pending_initial_storage_state()
+            elif self.authentication.pending_initial_storage_state() is not None:
+                # Persistent-context import has no safe IndexedDB injection
+                # path.  Call import_session for its cookies/localStorage path.
+                raise AuthenticationError(
+                    "prepared portable state requires a new ephemeral context",
+                    kind=AuthenticationFailureKind.SESSION_UNSUPPORTED,
+                )
             self._context.on("page", self._on_context_page)
             self._event("context_created_at")
         except Exception as exc:
@@ -616,24 +693,80 @@ class PlaywrightBackend:
             self.authentication.verify_ready(self._page)
             self._event("page_created_at")
             self._network = []
+            self._network_by_request = {}
+
+            def trim_network() -> None:
+                if len(self._network) <= self._network_limit:
+                    return
+                removed = self._network[: len(self._network) - self._network_limit]
+                del self._network[: len(removed)]
+                for record in removed:
+                    self._network_by_request = {
+                        key: value
+                        for key, value in self._network_by_request.items()
+                        if value is not record
+                    }
+
+            def request_key(request: Any) -> object:
+                # Playwright normally preserves wrapper identity.  Prefer the
+                # stable internal GUID when exposed so response.request can be
+                # correlated even if it is a fresh Python wrapper.
+                impl = getattr(request, "_impl_obj", None)
+                guid = getattr(impl, "_guid", None)
+                return guid if isinstance(guid, str) else id(request)
+
+            def on_request(request: Any) -> None:
+                try:
+                    record = NetworkRecord(
+                        method=request.method,
+                        url=request.url,
+                        status=None,
+                        request_observed_at_ms=monotonic_ms(),
+                    )
+                    self._network.append(record)
+                    self._network_by_request[request_key(request)] = record
+                    trim_network()
+                except Exception:
+                    # Browser event handling never changes action dispatch.
+                    pass
 
             def on_response(response: Any) -> None:
                 try:
-                    self._network.append(
-                        NetworkRecord(
-                            method=response.request.method,
+                    request = response.request
+                    record = self._network_by_request.get(request_key(request))
+                    if record is None:
+                        # Some browser events can be observed after the request
+                        # hook was installed.  Record the response honestly;
+                        # it is not presented as a timed request/response pair.
+                        record = NetworkRecord(
+                            method=request.method,
                             url=response.url,
-                            status=response.status,
-                            recorded_at_ms=monotonic_ms(),
-                            content_type=response.headers.get("content-type"),
+                            status=None,
+                            request_observed_at_ms=monotonic_ms(),
+                            request_observed=False,
                         )
-                    )
-                    if len(self._network) > self._network_limit:
-                        del self._network[: len(self._network) - self._network_limit]
+                        self._network.append(record)
+                        self._network_by_request[request_key(request)] = record
+                    record.status = response.status
+                    record.response_observed_at_ms = monotonic_ms()
+                    record.content_type = response.headers.get("content-type")
+                    trim_network()
                 except Exception:
                     pass
 
-            self._page.on("response", on_response)
+            def on_request_failed(request: Any) -> None:
+                try:
+                    record = self._network_by_request.get(request_key(request))
+                    if record is not None:
+                        record.request_failed = True
+                except Exception:
+                    pass
+
+            # Context-level listeners cover every declared page transition;
+            # they are bounded and contain metadata only.
+            self._context.on("request", on_request)
+            self._context.on("response", on_response)
+            self._context.on("requestfailed", on_request_failed)
             self.browser_session_id = str(uuid.uuid4())
             self.context_id = str(uuid.uuid4())
             self.page_id = self._page_ids_by_object.get(id(self._page)) or str(
@@ -705,16 +838,26 @@ class PlaywrightBackend:
         except Exception as exc:
             self.cleanup_errors.append(f"browser_close:{type(exc).__name__}: {exc}")
         try:
-            if self._playwright is not None:
-                self._playwright.stop()
-                self._event("playwright_stopped_at")
+            if self._playwright_lease_acquired:
+                with type(self)._driver_lock:
+                    type(self)._shared_playwright_refcount = max(
+                        0, type(self)._shared_playwright_refcount - 1
+                    )
+                    if type(self)._shared_playwright_refcount == 0:
+                        shared = type(self)._shared_playwright
+                        type(self)._shared_playwright = None
+                        if shared is not None:
+                            shared.stop()
+                            self._event("playwright_stopped_at")
         except Exception as exc:
             self.cleanup_errors.append(f"playwright_stop:{type(exc).__name__}: {exc}")
         self._page = None
         self._context = None
         self._browser = None
         self._playwright = None
+        self._playwright_lease_acquired = False
         self._network = []
+        self._network_by_request = {}
         self.browser_session_id = None
         self.context_id = None
         self.page_id = None
@@ -999,16 +1142,8 @@ class PlaywrightBackend:
             kind=SignalKind.NETWORK,
             collected_at_ms=now,
             payload={
-                "records": [
-                    {
-                        "method": n.method,
-                        "url": n.url,
-                        "status": n.status,
-                        "content_type": n.content_type,
-                        "recorded_at_ms": n.recorded_at_ms,
-                    }
-                    for n in net_snapshot
-                ]
+                "records": [n.to_runtime_dict() for n in net_snapshot],
+                "discarded_record_count": max(0, len(self._network) - len(net_snapshot)),
             },
             notes="network log snapshot at observation time",
         )
@@ -1019,17 +1154,101 @@ class PlaywrightBackend:
             network=net_snapshot,
         )
 
+    def capture_network_artifact(
+        self,
+        *,
+        operation_id: str,
+        action_started_at_ms: int | None,
+        request: Any,
+    ) -> dict[str, Any]:
+        """Write an explicitly requested bounded, sanitized Layer-3 trace.
+
+        This method never feeds verifier input.  It deliberately does not use
+        Playwright's context-wide HAR facility: that facility can capture
+        unrelated pre/post-operation traffic and headers, which violates the
+        per-operation bounded evidence boundary.
+        """
+        request.validate()
+        matching_records = [
+            item.to_runtime_dict()
+            for item in self._network
+            if action_started_at_ms is None or item.recorded_at_ms >= action_started_at_ms
+        ]
+        truncated = len(matching_records) > request.max_records
+        records = matching_records[-request.max_records :]
+        artifact_id = "network-trace-" + uuid.uuid4().hex
+        filename = f"{artifact_id}.json"
+        try:
+            root = Path(self.trusted_download_config.artifact_root).resolve()
+            destination = root / "network-traces" / filename
+            payload = {
+                "schema_version": 1,
+                "kind": "sanitized_network_trace",
+                "operation_id": operation_id,
+                "records": [safe_network_record(record) for record in records],
+                "truncated": truncated,
+                "bodies_included": False,
+                "headers_included": False,
+            }
+            publish_json(destination, payload, sort_keys=True)
+            digest = hashlib.sha256(
+                json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            return {
+                "artifact_id": artifact_id,
+                "kind": "network_trace",
+                "status": "available",
+                "filename": filename,
+                "record_count": len(records),
+                "sha256": digest,
+                "headers_included": False,
+                "bodies_included": False,
+            }
+        except Exception as exc:
+            return {
+                "artifact_id": artifact_id,
+                "kind": "network_trace",
+                "status": "failed",
+                "filename": filename,
+                "reason": type(exc).__name__,
+                "headers_included": False,
+                "bodies_included": False,
+            }
+
+    def participate_webauthn(self, request: Any) -> dict[str, Any]:
+        """Delegate only metadata to a host transport; never control authenticators."""
+        origin: str | None = None
+        try:
+            parsed = urlsplit(self.page.url)
+            if parsed.scheme in {"http", "https"} and parsed.netloc:
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+        except Exception:
+            origin = None
+        receipt = self.authentication.participate_webauthn(
+            request,
+            browser_engine=self.browser_identity,
+            page_origin=origin,
+        )
+        return receipt.to_dict()
+
     def _resolve_locator(self, locator: Locator):
         """Primary-only Playwright locator (constraints applied via resolve_target)."""
         from dingdongditch.backends.target_resolver import _primary_playwright_locator
 
         return _primary_playwright_locator(self.page, locator)
 
-    def count_matches(self, locator: Locator, *, frame: Locator | None = None) -> int:
+    def count_matches(
+        self,
+        locator: Locator,
+        *,
+        frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
+    ) -> int:
         root = self.page
-        if frame is not None:
-            framed = resolve_frame(
-                self.page, frame, backend_identity=self.backend_identity
+        path = frame_path or ((frame,) if frame is not None else ())
+        if path:
+            framed = resolve_frame_path(
+                self.page, path, backend_identity=self.backend_identity
             )
             if not framed.ok or framed.frame is None:
                 return framed.match_count
@@ -1046,19 +1265,21 @@ class PlaywrightBackend:
         self,
         locator: Locator,
         *,
-        frame: Locator | None,
-        cardinality: CardinalityPolicy,
+        frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
+        cardinality: CardinalityPolicy = CardinalityPolicy.EXACTLY_ONE,
     ) -> ResolvedTarget:
-        """Resolve locator in main document or a declared iframe. Page stays owned."""
-        if frame is None:
+        """Resolve a target in main document or an explicit declared frame path."""
+        path = frame_path or ((frame,) if frame is not None else ())
+        if not path:
             return resolve_target(
                 self.page,
                 locator,
                 cardinality=cardinality,
                 backend_identity=self.backend_identity,
             )
-        framed = resolve_frame(
-            self.page, frame, backend_identity=self.backend_identity
+        framed = resolve_frame_path(
+            self.page, path, backend_identity=self.backend_identity
         )
         if not framed.ok or framed.frame is None:
             return ResolvedTarget(
@@ -1087,6 +1308,7 @@ class PlaywrightBackend:
             resolved = self._resolve_scoped_target(
                 operation.action.locator,
                 frame=operation.action.frame,
+                frame_path=operation.action.frame_path,
                 cardinality=operation.cardinality,
             )
             clean_zero = resolved.match_count == 0 and resolved.failure_kind in {
@@ -1172,6 +1394,7 @@ class PlaywrightBackend:
         resolved = self._resolve_scoped_target(
             condition.locator,
             frame=condition.frame,
+            frame_path=condition.frame_path,
             cardinality=cardinality,
         )
         observed["match_count"] = resolved.match_count
@@ -1930,6 +2153,217 @@ class PlaywrightBackend:
             action_evidence=evidence,
         )
 
+    def _upload_snapshot(self, loc: Any, token: str) -> dict[str, Any]:
+        return loc.evaluate(
+            """(el, token) => {
+              const scope = (el.parentElement && el.parentElement.closest('[data-testid],fieldset,label,[class*="upload"],[class*="attachment"],[class*="field"],form')) || el.parentElement || el;
+              scope.setAttribute('data-ddd-upload-scope', token);
+              const visible = n => {
+                const r = n.getBoundingClientRect(), s = getComputedStyle(n);
+                return n.isConnected && s.visibility !== 'hidden' && s.display !== 'none'
+                  && r.width > 0 && r.height > 0;
+              };
+              return {
+                target: {
+                  tag: (el.tagName || '').toLowerCase(),
+                  type: (el.getAttribute('type') || '').toLowerCase(),
+                  id: el.id || null, name: el.getAttribute('name'),
+                  accept: el.getAttribute('accept'), multiple: el.hasAttribute('multiple'),
+                  aria_label: el.getAttribute('aria-label'),
+                },
+                scope: {tag: (scope.tagName || '').toLowerCase(), id: scope.id || null},
+                file_names: Array.from(el.files || [], f => String(f.name)),
+                visible_text: visible(scope) ? (scope.innerText || '').slice(0, 500) : '',
+                url: location.href,
+              };
+            }""",
+            token,
+        )
+
+    def _upload_post_snapshot(self, token: str, expected: list[str]) -> dict[str, Any]:
+        return self.page.evaluate(
+            """({token, expected}) => {
+              const visible = n => {
+                const r = n.getBoundingClientRect(), s = getComputedStyle(n);
+                return n.isConnected && s.visibility !== 'hidden' && s.display !== 'none'
+                  && r.width > 0 && r.height > 0;
+              };
+              const scope = document.querySelector(`[data-ddd-upload-scope="${CSS.escape(token)}"]`);
+              const root = scope || document.body;
+              const inputs = [...(root.matches && root.matches('input[type=file]') ? [root] : []),
+                ...Array.from(root.querySelectorAll('input[type=file]'))];
+              const fileLists = inputs.map(el => Array.from(el.files || [], f => String(f.name)));
+              const text = visible(root) ? (root.innerText || '') : '';
+              const filenameHits = expected.filter(name => text.includes(name));
+              const controls = Array.from(root.querySelectorAll('button,[role=button],a'))
+                .filter(visible).map(n => (n.innerText || n.getAttribute('aria-label') || '').trim())
+                .filter(t => /^(remove|delete|replace)(\\s+file)?$/i.test(t)).slice(0, 10);
+              if (scope) scope.removeAttribute('data-ddd-upload-scope');
+              return {
+                scope_retained: !!scope,
+                replacement_input_count: inputs.length,
+                file_lists: fileLists,
+                visible_filename_hits: filenameHits,
+                attachment_controls: controls,
+                url: location.href,
+              };
+            }""",
+            {"token": token, "expected": expected},
+        )
+
+    def _dispatch_combobox_selection(
+        self, operation: Operation, loc: Any, resolved: Any, started: int,
+        evidence: dict[str, Any], effective_timeout_ms: int,
+    ) -> ActionDispatchResult:
+        from dingdongditch.contract.modes import TextMatchMode
+
+        request = operation.action.combobox_selection
+        assert request is not None
+        target = loc.evaluate(
+            """el => ({tag:(el.tagName||'').toLowerCase(), role:el.getAttribute('role'),
+              aria_controls:el.getAttribute('aria-controls'), aria_expanded:el.getAttribute('aria-expanded'), read_only:!!el.readOnly,
+              value:'value' in el ? String(el.value || '') : '',
+              wrapper_text:(() => { const w=el.closest('[data-testid],label,[class*=field],fieldset') || el.parentElement || el;
+                const c=w.cloneNode(true); c.querySelectorAll('[role=listbox],[role=option],[data-options],[data-listbox]').forEach(n=>n.remove());
+                return (c.innerText||'').slice(0,500); })()})"""
+        )
+        pre_wrapper_text = target.pop("wrapper_text", "")
+        target["wrapper_text_length"] = len(pre_wrapper_text)
+        combo_evidence: dict[str, Any] = {
+            "query": request.query, "expected_option": request.expected_option,
+            "match_strategy": request.match.value, "target_state_before": target,
+            "candidate_options": [], "selected_option": None,
+            "verification_result": "not_verified", "timing": {"started_at_ms": started},
+        }
+        if target["tag"] == "select" or target["tag"] not in {"input", "textarea", "button", "div"}:
+            return ActionDispatchResult(False, "unsupported custom combobox target", started, monotonic_ms(),
+                match_count=1, resolution_trace=resolved.trace, failure_kind="unsupported_combobox",
+                action_evidence={**evidence, "combobox": combo_evidence})
+        try:
+            loc.focus(timeout=min(effective_timeout_ms, request.dropdown_timeout_ms))
+            if request.clear_existing and target["tag"] in {"input", "textarea"} and not target.get("read_only"):
+                loc.fill("")
+            if request.query:
+                if target["tag"] in {"input", "textarea"}:
+                    loc.fill(request.query)
+                else:
+                    loc.press(request.query)
+            else:
+                loc.click()
+        except PlaywrightError:
+            return ActionDispatchResult(False, "combobox query dispatch failed", started, monotonic_ms(),
+                match_count=1, resolution_trace=resolved.trace, failure_kind="unsupported_combobox",
+                action_evidence={**evidence, "combobox": combo_evidence})
+
+        deadline = monotonic_ms() + min(effective_timeout_ms, request.dropdown_timeout_ms)
+        candidates: list[tuple[Any, str]] = []
+        while monotonic_ms() < deadline:
+            controls = target.get("aria_controls")
+            if controls:
+                root = self.page.locator(f'[id="{controls.replace(chr(34), chr(92)+chr(34))}"]')
+                option_set = root.locator('[role="option"], [data-option], [data-value], li')
+            else:
+                option_set = self.page.locator(
+                    '[role="listbox"]:visible [role="option"], [role="option"]:visible, '
+                    '[data-listbox]:visible [data-option], [data-options]:visible [data-option]'
+                )
+                if option_set.count() == 0:
+                    option_set = loc.locator(
+                        "xpath=following::*[@role='listbox' or @data-listbox or @data-options][1]"
+                    ).locator('[role="option"], [data-option], [data-value], li')
+            candidates = []
+            for item in option_set.all()[:50]:
+                try:
+                    if item.is_visible():
+                        label = (item.inner_text() or item.get_attribute("aria-label") or "").strip()
+                        if label:
+                            candidates.append((item, label[:200]))
+                except PlaywrightError:
+                    continue
+            if candidates:
+                break
+            self.page.wait_for_timeout(100)
+        combo_evidence["candidate_options"] = [label for _, label in candidates]
+        combo_evidence["timing"]["options_observed_at_ms"] = monotonic_ms()
+        if not candidates:
+            try:
+                dropdown_opened = loc.get_attribute("aria-expanded") == "true"
+            except PlaywrightError:
+                dropdown_opened = False
+            combo_evidence["dropdown_opened"] = dropdown_opened
+            return ActionDispatchResult(False, "combobox dropdown did not expose options", started, monotonic_ms(),
+                match_count=0, resolution_trace=resolved.trace,
+                failure_kind="no_matching_option" if dropdown_opened else "dropdown_not_opened",
+                action_evidence={**evidence, "combobox": combo_evidence})
+        expected = request.expected_option
+        if request.match == TextMatchMode.EXACT:
+            matches = [(item, label) for item, label in candidates if label == expected]
+        else:
+            matches = [(item, label) for item, label in candidates if expected in label]
+        if not matches:
+            return ActionDispatchResult(False, "no combobox option matched", started, monotonic_ms(),
+                match_count=0, resolution_trace=resolved.trace, failure_kind="no_matching_option",
+                action_evidence={**evidence, "combobox": combo_evidence})
+        if len(matches) != 1:
+            return ActionDispatchResult(False, "combobox option match was ambiguous", started, monotonic_ms(),
+                match_count=len(matches), resolution_trace=resolved.trace, failure_kind="ambiguous_option",
+                action_evidence={**evidence, "combobox": combo_evidence})
+        option, observed_label = matches[0]
+        try:
+            if not option.is_visible() or (option.inner_text() or "").strip()[:200] != observed_label:
+                raise RuntimeError("stale")
+        except Exception:
+            return ActionDispatchResult(False, "combobox options changed before selection", started, monotonic_ms(),
+                match_count=1, resolution_trace=resolved.trace, failure_kind="stale_combobox_state",
+                action_evidence={**evidence, "combobox": combo_evidence})
+        try:
+            option.click(timeout=min(effective_timeout_ms, request.dropdown_timeout_ms))
+        except PlaywrightError:
+            return ActionDispatchResult(False, "combobox option click failed", started, monotonic_ms(),
+                match_count=1, resolution_trace=resolved.trace, failure_kind="option_click_failed",
+                action_evidence={**evidence, "combobox": combo_evidence})
+        combo_evidence["selected_option"] = observed_label
+        persisted = False
+        final_state: dict[str, Any] = {}
+        verify_deadline = monotonic_ms() + min(2000, request.dropdown_timeout_ms)
+        while monotonic_ms() < verify_deadline:
+            fresh = self._resolve_scoped_target(
+                operation.action.locator,
+                frame=operation.action.frame,
+                frame_path=operation.action.frame_path,
+                cardinality=operation.cardinality,
+            )
+            if fresh.ok and fresh.playwright_locator is not None:
+                try:
+                    final_state = fresh.playwright_locator.evaluate(
+                        """(el, expected) => { const wrapper=el.closest('[data-testid],label,[class*=field],fieldset')||el.parentElement||el;
+                        const c=wrapper.cloneNode(true); c.querySelectorAll('[role=listbox],[role=option],[data-options],[data-listbox]').forEach(n=>n.remove());
+                        return {value:'value' in el?String(el.value||''):'', aria_expanded:el.getAttribute('aria-expanded'),
+                          wrapper_text:(c.innerText||'').slice(0,500), expected}; }""", expected)
+                    value_ok = final_state["value"] == expected or (
+                        request.match == TextMatchMode.CONTAINS and expected in final_state["value"]
+                    )
+                    final_wrapper_text = final_state.pop("wrapper_text", "")
+                    text_changed = final_wrapper_text != pre_wrapper_text and expected in final_wrapper_text
+                    final_state["wrapper_contains_selected_option"] = expected in final_wrapper_text
+                    final_state["wrapper_text_length"] = len(final_wrapper_text)
+                    closed = final_state["aria_expanded"] != "true"
+                    persisted = bool(closed and (value_ok or text_changed))
+                except PlaywrightError:
+                    persisted = False
+            if persisted:
+                break
+            self.page.wait_for_timeout(100)
+        combo_evidence["final_state"] = final_state
+        combo_evidence["verification_result"] = "pass" if persisted else "fail"
+        combo_evidence["timing"]["completed_at_ms"] = monotonic_ms()
+        if not persisted:
+            return ActionDispatchResult(False, "combobox selection did not persist", started, monotonic_ms(),
+                match_count=1, resolution_trace=resolved.trace, failure_kind="selection_not_persisted",
+                action_evidence={**evidence, "combobox": combo_evidence})
+        return ActionDispatchResult(True, None, started, monotonic_ms(), match_count=1,
+            resolution_trace=resolved.trace, action_evidence={**evidence, "combobox": combo_evidence})
+
     def _dispatch_core(
         self,
         operation: Operation,
@@ -2096,7 +2530,7 @@ class PlaywrightBackend:
             identity = None
             while True:
                 attempt += 1
-                if action.frame is None:
+                if action.frame is None and not action.frame_path:
                     identity = resolve_target_identity(
                         self.page,
                         action.locator,
@@ -2104,9 +2538,9 @@ class PlaywrightBackend:
                         backend_identity=self.backend_identity,
                     )
                 else:
-                    framed = resolve_frame(
+                    framed = resolve_frame_path(
                         self.page,
-                        action.frame,
+                        action.frame_path or (action.frame,),
                         backend_identity=self.backend_identity,
                     )
                     if not framed.ok or framed.frame is None:
@@ -2229,7 +2663,7 @@ class PlaywrightBackend:
             if (
                 identity.ok
                 and identity.playwright_locator is not None
-                and action.type != ActionType.SCROLL_TO_TARGET
+                and action.type not in (ActionType.SCROLL_TO_TARGET, ActionType.UPLOAD_FILE)
             ):
                 already_in_viewport = bool(identity.playwright_locator.evaluate(
                     """el => {
@@ -2259,6 +2693,7 @@ class PlaywrightBackend:
             resolved = self._resolve_scoped_target(
                 action.locator,
                 frame=action.frame,
+                frame_path=action.frame_path,
                 cardinality=operation.cardinality,
             )
             for stage in resolved.trace.stages:
@@ -2300,6 +2735,9 @@ class PlaywrightBackend:
                   return {connected: el.isConnected, visible, enabled: !disabled};
                 }"""
             )
+            if action.type == ActionType.UPLOAD_FILE:
+                # Hidden file inputs are standard; connected and enabled remain required.
+                actionability["visible"] = True
             resolved.trace.stages.append(
                 ResolutionStage(
                     stage="actionability",
@@ -2335,6 +2773,11 @@ class PlaywrightBackend:
                 "preparation": preparation,
                 "actionability": actionability,
             }
+
+            if action.type == ActionType.SELECT_COMBOBOX_OPTION:
+                return self._dispatch_combobox_selection(
+                    operation, loc, resolved, started, evidence, effective_timeout_ms
+                )
 
             if action.type == ActionType.DOWNLOAD:
                 assert action.download_request is not None
@@ -2743,7 +3186,120 @@ class PlaywrightBackend:
                         except Exception:
                             pass
 
-            if action.type == ActionType.CLICK:
+            if action.type == ActionType.UPLOAD_FILE:
+                from dingdongditch.contract.upload import accept_allows
+
+                authorization = action.upload_authorization
+                assert authorization is not None
+                resolved_files = authorization.validate_and_resolve()
+                safe = authorization.safe_evidence(resolved_files)
+                expected_names = [path.name for path in resolved_files]
+                upload_token = str(uuid.uuid4())
+                pre_upload = self._upload_snapshot(loc, upload_token)
+                pre_visible_text = pre_upload.pop("visible_text", "")
+                pre_upload["existing_requested_filename_hits"] = [
+                    name for name in expected_names if name in pre_visible_text
+                ]
+                pre_upload["visible_text_length"] = len(pre_visible_text)
+                control = pre_upload["target"]
+                upload_evidence = {
+                    **safe,
+                    "target_kind": control,
+                    "pre_upload_evidence": pre_upload,
+                    "dispatch_result": "not_attempted",
+                    "execution_result": "not_dispatched",
+                    "verification_result": "not_verified",
+                    "dispatched": False,
+                }
+                if control.get("tag") != "input" or control.get("type") != "file":
+                    return ActionDispatchResult(
+                        ok=False, error="upload target is not an HTML input[type=file] element",
+                        started_at_ms=started, completed_at_ms=monotonic_ms(),
+                        match_count=1, resolution_trace=resolved.trace,
+                        failure_kind="upload_target_not_file_input",
+                        action_evidence={"upload": upload_evidence},
+                    )
+                if len(resolved_files) > 1 and not control.get("multiple"):
+                    return ActionDispatchResult(
+                        ok=False, error="multiple files requested but the upload target does not allow multiple files",
+                        started_at_ms=started, completed_at_ms=monotonic_ms(),
+                        match_count=1, resolution_trace=resolved.trace,
+                        failure_kind="upload_multiple_not_allowed",
+                        action_evidence={"upload": upload_evidence},
+                    )
+                rejected = [path.name for path in resolved_files if not accept_allows(path, control.get("accept"))]
+                if rejected:
+                    upload_evidence["accept_rejected_file_names"] = rejected
+                    return ActionDispatchResult(
+                        ok=False, error="one or more files do not match the target accept restriction",
+                        started_at_ms=started, completed_at_ms=monotonic_ms(),
+                        match_count=1, resolution_trace=resolved.trace,
+                        failure_kind="upload_accept_mismatch",
+                        action_evidence={"upload": upload_evidence},
+                    )
+                dispatch_error = None
+                try:
+                    loc.set_input_files([str(path) for path in resolved_files], timeout=effective_timeout_ms)
+                    upload_evidence["dispatch_result"] = "succeeded"
+                except PlaywrightError as exc:
+                    dispatch_error = type(exc).__name__
+                    upload_evidence["dispatch_result"] = "error"
+                try:
+                    post_upload = self._upload_post_snapshot(upload_token, expected_names)
+                except PlaywrightError:
+                    post_upload = {
+                        "scope_retained": False, "replacement_input_count": 0,
+                        "file_lists": [], "visible_filename_hits": [],
+                        "attachment_controls": [], "post_state_unavailable": True,
+                    }
+                exact_file_list = any(names == expected_names for names in post_upload.get("file_lists", []))
+                fresh_hits = [name for name in post_upload.get("visible_filename_hits", []) if name not in pre_visible_text]
+                filename_confirmation = sorted(fresh_hits) == sorted(expected_names)
+                attachment_confirmation = bool(filename_confirmation and post_upload.get("attachment_controls"))
+                verified = bool(exact_file_list or filename_confirmation or attachment_confirmation)
+                original_disappeared = not post_upload.get("scope_retained")
+                upload_evidence.update({
+                    "post_upload_evidence": post_upload,
+                    "observed_file_names": expected_names if verified else [],
+                    "observed_file_count": len(expected_names) if verified else 0,
+                    "verification_signals": {
+                        "file_list_match": exact_file_list,
+                        "fresh_visible_filename": filename_confirmation,
+                        "attachment_control": attachment_confirmation,
+                        "original_input_disappeared": original_disappeared,
+                    },
+                })
+                if dispatch_error is not None and not verified:
+                    upload_evidence.update({"dispatched": False, "execution_result": "dispatch_failed", "verification_result": "fail", "dispatch_error_kind": dispatch_error})
+                    return ActionDispatchResult(
+                        ok=False, error="file upload dispatch failed without confirming post-state",
+                        started_at_ms=started, completed_at_ms=monotonic_ms(),
+                        match_count=1, resolution_trace=resolved.trace,
+                        failure_kind="upload_dispatch_failed",
+                        action_evidence={"upload": upload_evidence},
+                    )
+                upload_evidence["dispatched"] = True
+                if verified:
+                    upload_evidence.update({
+                        "dispatch_result": "succeeded" if dispatch_error is None else "succeeded_inferred_from_post_state",
+                        "execution_result": "verified", "verification_result": "pass",
+                    })
+                else:
+                    indeterminate = bool(original_disappeared or post_upload.get("post_state_unavailable"))
+                    upload_evidence.update({
+                        "execution_result": "indeterminate" if indeterminate else "dispatch_succeeded_verification_failed",
+                        "verification_result": "indeterminate" if indeterminate else "fail",
+                    })
+                    return ActionDispatchResult(
+                        ok=False, error="upload dispatch succeeded but durable verification did not confirm attachment",
+                        started_at_ms=started, completed_at_ms=monotonic_ms(), match_count=1,
+                        resolution_trace=resolved.trace,
+                        failure_kind="upload_verification_indeterminate" if indeterminate else "upload_verification_failed",
+                        action_evidence={"upload": upload_evidence},
+                    )
+                evidence.update({"upload": upload_evidence, "dispatched": True})
+
+            elif action.type == ActionType.CLICK:
                 transition = operation.page_transition or PageTransition()
                 page_ids_before = {
                     item["page_id"]
@@ -2966,8 +3522,18 @@ class PlaywrightBackend:
                 evidence["switching_occurred"] = opener_id != self.page_id
                 evidence["page_registry"] = self.list_pages()
             elif action.type == ActionType.FILL:
-                assert action.text is not None
-                loc.fill(action.text, timeout=effective_timeout_ms)
+                if action.secret_reference is not None:
+                    secret_receipt = self.authentication.inject(
+                        loc,
+                        action.secret_reference,
+                        timeout_ms=action.secret_timeout_ms,
+                    )
+                    # Deliberately neutral key: generic evidence sanitizers
+                    # redact values beneath keys containing "secret".
+                    evidence["ephemeral_fill"] = secret_receipt.to_dict()
+                else:
+                    assert action.text is not None
+                    loc.fill(action.text, timeout=effective_timeout_ms)
             elif action.type == ActionType.PRESS_KEY:
                 assert action.key is not None
                 loc.press(action.key, timeout=effective_timeout_ms)
@@ -3228,6 +3794,27 @@ class PlaywrightBackend:
                 resolution_trace=resolved.trace,
                 action_evidence=evidence,
             )
+        except AuthenticationError as exc:
+            completed = monotonic_ms()
+            collector.add(
+                kind=SignalKind.ACTION_RESULT,
+                collected_at_ms=completed,
+                payload={"ok": False, "failure_kind": exc.kind.value},
+                notes="secret provider or authentication boundary failed",
+            )
+            return ActionDispatchResult(
+                ok=False,
+                error="authentication boundary failed",
+                started_at_ms=started,
+                completed_at_ms=completed,
+                recovery_attempts=recovery,
+                resolution_trace=last_trace,
+                failure_kind=exc.kind.value,
+                action_evidence={
+                    **evidence,
+                    "authentication_failure": {"failure_kind": exc.kind.value},
+                },
+            )
         except (PlaywrightTimeoutError, PlaywrightError) as exc:
             completed = monotonic_ms()
             msg = str(exc)
@@ -3256,10 +3843,12 @@ class PlaywrightBackend:
         handle: Any,
         *,
         target_resolution: dict[str, Any],
+        attribute_names: tuple[str, ...] = (),
     ) -> ElementStateSnapshot:
+        names = tuple(dict.fromkeys((*LEGACY_ATTRIBUTE_NAMES, *attribute_names)))[:24]
         raw = handle.evaluate(
             ATOMIC_ELEMENT_SNAPSHOT_JS,
-            list(LEGACY_ATTRIBUTE_NAMES),
+            list(names),
         )
         if not isinstance(raw, dict) or raw.get("supported") is not True:
             reason = (
@@ -3303,7 +3892,14 @@ class PlaywrightBackend:
             focused=raw.get("focused"),
             text=str(raw.get("text") or ""),
             value=raw.get("value"),
+            tag=raw.get("tag"),
             role=raw.get("role"),
+            ancestor_tags=tuple(str(item) for item in raw.get("ancestor_tags") or ()),
+            child_element_count=(
+                int(raw["child_element_count"])
+                if isinstance(raw.get("child_element_count"), int)
+                else None
+            ),
             bounding_box=(
                 {key: float(value) for key, value in box.items()}
                 if isinstance(box, dict)
@@ -3313,6 +3909,8 @@ class PlaywrightBackend:
                 name: value
                 for name, value in dict(raw.get("attributes") or {}).items()
             },
+            file_names=tuple(str(item) for item in raw.get("file_names") or ()),
+            file_count=int(raw.get("file_count", 0)),
             target_resolution=target_resolution,
             collection_mode="atomic",
         )
@@ -3323,13 +3921,14 @@ class PlaywrightBackend:
         *,
         target_resolution: dict[str, Any],
         fallback_error: str,
+        attribute_names: tuple[str, ...] = (),
     ) -> ElementStateSnapshot:
         """Compatibility fallback used only for explicit unsupported results."""
         visible = handle.is_visible()
         enabled = handle.is_enabled()
         text = handle.inner_text() if visible else handle.text_content() or ""
         attrs: dict[str, str | None] = {}
-        for name in LEGACY_ATTRIBUTE_NAMES:
+        for name in tuple(dict.fromkeys((*LEGACY_ATTRIBUTE_NAMES, *attribute_names)))[:24]:
             try:
                 attrs[name] = handle.get_attribute(name)
             except PlaywrightError:
@@ -3345,6 +3944,15 @@ class PlaywrightBackend:
             checked = bool(handle.is_checked())
         except PlaywrightError:
             checked = None
+        file_names: tuple[str, ...] = ()
+        try:
+            raw_file_names = handle.evaluate(
+                "el => Array.from(el.files || [], f => String(f.name))"
+            )
+            if isinstance(raw_file_names, list):
+                file_names = tuple(str(item) for item in raw_file_names)
+        except PlaywrightError:
+            pass
         self._atomic_snapshot_fallback_count += 1
         self._event("atomic_element_snapshot_fallback", error=fallback_error)
         return ElementStateSnapshot(
@@ -3361,15 +3969,23 @@ class PlaywrightBackend:
             target_resolution=target_resolution,
             collection_mode="serial_fallback",
             error=fallback_error,
+            file_names=file_names,
+            file_count=len(file_names),
         )
 
     def capture_element_snapshot(
-        self, locator: Locator, *, frame: Locator | None = None
+        self,
+        locator: Locator,
+        *,
+        frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
+        attribute_names: tuple[str, ...] = (),
     ) -> ElementStateSnapshot:
         """Resolve once and capture one atomic, boundary-local DOM snapshot."""
         resolved = self._resolve_scoped_target(
             locator,
             frame=frame,
+            frame_path=frame_path,
             cardinality=CardinalityPolicy.EXACTLY_ONE,
         )
         trace = resolved.trace.to_dict()
@@ -3391,18 +4007,29 @@ class PlaywrightBackend:
         handle = resolved.playwright_locator
         try:
             return self._atomic_element_snapshot(
-                handle, target_resolution=trace
+                handle,
+                target_resolution=trace,
+                attribute_names=attribute_names,
             )
         except AtomicSnapshotUnsupported as exc:
             return self._serial_element_snapshot(
                 handle,
                 target_resolution=trace,
                 fallback_error=str(exc),
+                attribute_names=attribute_names,
             )
 
     def read_element_state(
-        self, locator: Locator, *, frame: Locator | None = None
+        self,
+        locator: Locator,
+        *,
+        frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
+        attribute_names: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         return self.capture_element_snapshot(
-            locator, frame=frame
+            locator,
+            frame=frame,
+            frame_path=frame_path,
+            attribute_names=attribute_names,
         ).to_legacy_state()
