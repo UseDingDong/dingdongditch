@@ -1,140 +1,187 @@
 # DingDongDitch
 
-DingDongDitch is a deterministic browser-execution runtime for browser
-automation and AI applications. A host authors explicit `ExecutionPlan`
-documents; DingDongDitch validates them, executes bounded browser operations,
-verifies declared expectations, and returns structured receipts. It is not an
-AI agent and never invents workflows.
+DingDongDitch is a model-neutral, fail-closed browser execution runtime. Your
+AI agent, developer code, CI job, or test remains the planner: it declares the
+browser operations and expected outcomes. DingDongDitch executes only those
+operations, verifies the resulting browser state, and returns structured
+receipts instead of guessing, healing ambiguous locators, or inventing work.
+
+```text
+External AI / Agent / Host
+        | authors an ExecutionPlan or calls the API
+        v
+    DingDongDitch
+        | bounded browser dispatch and fresh observation
+        v
+      Browser
+        | verification and structured receipt
+        v
+External AI / Agent / Host
+```
+
+It is execution infrastructure, not an AI agent or a workflow engine.
 
 ## Quick start
 
-Requires Python 3.11 or newer.
+Requires Python 3.11 or newer. This runs a repository-local deterministic
+fixture, verifies declared browser state, and writes an inspectable receipt.
 
 ```bash
 git clone <repository-url>
 cd DINGDONGDITCH
 python -m pip install -e ".[dev]"
-python -m playwright install chromium firefox webkit
-python -m dingdongditch run examples/plans/example_navigation_verified.json
+python -m playwright install chromium
+python -m dingdongditch run-plan examples/plans/basic_navigation.json --output artifacts/quickstart-receipt.json
+python -m json.tool artifacts/quickstart-receipt.json
 ```
 
-The CLI consumes authored JSON from a file or standard input. It does not
-author plans, heal locators, retry arbitrarily, or reinterpret intent.
+The terminal reports the plan verdict; the JSON file contains step receipts,
+verification results, timing, and bounded evidence. `artifacts/` is ignored by
+Git so local receipt output does not pollute a working tree.
 
-## Core capabilities
+For a host integration, the planner constructs an `ExecutionPlan` using the
+typed API or JSON, then consumes the result:
 
-- Ordered plans and standalone operations with bounded timeouts and fresh
-  browser-observable verification.
-- `VERIFIED`, `NOT_VERIFIED`, `INDETERMINATE`, and `EXECUTION_FAILED` verdicts.
-- Chromium, Firefox, and WebKit through Playwright, with no engine fallback.
-- Explicit guarded branches, declared waits, bounded nested frame paths,
-  downloads, dialogs, and page operations.
-- Deterministic file uploads and custom combobox/autocomplete selection.
-- Network request/response metadata assertions and optional sanitized trace
-  artifacts.
-- Isolated persistent profiles, portable browser state, runtime-only secret
-  injection, and bounded host WebAuthn participation.
-- Model-neutral contracts, fail-closed target resolution, and no silent locator
-  healing.
+```python
+from dingdongditch import execute_plan
 
-## Guarded branches and frame paths
+# `plan` was authored by your host, agent, CI job, or test -- not by DingDongDitch.
+receipt = execute_plan(plan)
+result = receipt.to_dict()
+if result["plan_verdict"] != "VERIFIED":
+    print(result)  # The host decides what to do next; the runtime does not.
+```
 
-Guards are finite declared UI-state branches, not general workflow control
-flow. A matching branch may run a bounded preparation-action list before the
-primary action; no branch match fails, and multiple matches are
-`INDETERMINATE`. Legacy `when_target_absent` guards remain compatible.
+See the runnable [host API example](./examples/host_execution_plan.py) and the
+[JSON plan guide](./examples/plans/README.md). The CLI and runtime never
+author plans, reinterpret intent, or choose recovery steps.
 
-Element-scoped actions, waits, expectations, page preconditions, and
-inspection can use either legacy one-hop `frame` or explicit bounded
-`frame_path`. Every hop is resolved in order. DingDongDitch never searches
-frames or falls back to the main document. See
-[iframe targeting](./Engineering/Phase%203/IFRAME_TARGETING.md).
+## What v0.4.0 provides
 
-## Stateful sessions and browser state
+- Deterministic browser actions, declared waits, page operations, and strict
+  target cardinality across Playwright Chromium, Firefox, and WebKit.
+- Verification-backed structured receipts, bounded failed-verification
+  evidence, and standardized per-operation timing.
+- Bounded guarded branches, including explicit `otherwise`, and declared nested
+  same-page `frame_path` targeting with no frame search or document fallback.
+- Explicitly authorized `upload_file` actions and deterministic
+  `select_combobox_option` selection for custom combobox/autocomplete controls.
+- Deterministic network request/response metadata assertions and optional
+  sanitized network trace artifacts.
+- `StatefulSessionRuntime` for host-owned incremental browser sessions.
+- Portable browser-state schema v2, including opt-in IndexedDB only within its
+  new-context import boundary.
+- Isolated persistent profiles for supported Chromium, Firefox, and WebKit
+  configurations, without browser-engine fallback.
+- Host-owned `SecretProvider` / opaque `SecretReference` injection and bounded,
+  host-controlled WebAuthn participation.
+
+## Receipts verify state, not just dispatch
+
+An action being dispatched does not prove that the intended state resulted. An
+operation is `VERIFIED` only when every declared expectation passes with fresh
+browser evidence. A click or upload may therefore dispatch successfully and
+still be `NOT_VERIFIED` or `INDETERMINATE` if the declared result is absent or
+cannot be justified.
+
+| Verdict | Meaning |
+| --- | --- |
+| `VERIFIED` | The action completed and all declared expectations passed with fresh evidence. |
+| `NOT_VERIFIED` | Execution completed, but a declared expectation was false. |
+| `INDETERMINATE` | Evidence was ambiguous, stale, unavailable, or otherwise insufficient for a justified claim. |
+| `EXECUTION_FAILED` | Validation, setup, target resolution, or browser dispatch failed. |
+
+Receipt schema **1.8.0** separates control-flow truth from diagnostics:
+
+1. **Core Receipt** — compact verdict, status, target summary, timing, and
+   browser/session identity.
+2. **Bounded Evidence** — sanitized verification, failure, freshness, action,
+   and network evidence that explains the verdict.
+3. **Optional Artifacts** — safe external references to heavyweight material,
+   such as redacted screenshots or a bounded sanitized network trace.
+
+Artifacts never become proof by themselves. Core receipts never contain DOM
+dumps, network bodies, headers, screenshot bytes, or absolute paths. New API
+consumers can use `ExecutionReceipt.to_layered_dict()`; `to_dict()` remains
+available for compatibility. See the
+[three-layer receipt guide](./Engineering/THREE_LAYER_RECEIPT_ARCHITECTURE.md).
+
+## Stateful sessions, profiles, and portable state
 
 `StatefulSessionRuntime` provides a host-owned
 `open -> observe -> execute -> verify -> observe -> close` lifecycle without
-exposing raw Playwright objects. It preserves ordinary validation, evidence,
-profile locking, and cleanup behavior. See the
-[stateful-session guide](./Engineering/Phase%203/STATEFUL_SESSIONS.md) and
-[`examples/stateful_session_example.py`](./examples/stateful_session_example.py).
+exposing raw Playwright objects. It retains normal validation, evidence,
+profile-locking, and cleanup semantics. See the
+[stateful-session guide](./Engineering/Phase%203/STATEFUL_SESSIONS.md) and its
+[runnable example](./examples/stateful_session_example.py).
 
-Portable state uses a versioned schema. Explicit exports can contain cookies,
-sanitized origin-localStorage, and opt-in IndexedDB. Treat exported state as
-sensitive session material: DingDongDitch does not retain it or act as a
-credential vault. IndexedDB is importable only when creating a new ephemeral
-context; sessionStorage, password managers, browser profile internals,
-extensions, caches, history, and passkeys are not portable. The full boundary
-is documented in [remaining infrastructure boundaries](./Engineering/REMAINING_INFRASTRUCTURE_BOUNDARIES.md).
+Portable state v2 can explicitly export cookies, sanitized origin-localStorage,
+and opt-in IndexedDB. Exported state is sensitive session material, not a
+credential vault. IndexedDB is importable only while creating a new ephemeral
+context; sessionStorage, password managers, browser-profile internals,
+extensions, caches, history, and passkeys are not portable.
 
 Isolated named/DingDong profiles are supported for Chromium, Firefox, and
-WebKit where Playwright provides persistent contexts. There is no silent
-engine fallback or existing-profile migration between engines. Chromium's
-existing `default` profile is partially supported; existing Firefox and WebKit
-user profiles are unsupported.
+WebKit where Playwright provides persistent contexts. Chromium's existing
+`default` profile is partially supported; existing Firefox and WebKit user
+profiles are unsupported. Profiles are engine-isolated and never migrated
+between engines.
 
-## Interactions
+## Interactions, network, and host authentication
 
-`upload_file` requires exact absolute file paths plus an explicit host
-allowlist or allowed root. It operates direct HTML file inputs, redacts local
-paths in receipts, and verifies fresh browser state even when a legitimate
-upload replaces the original input. It does not automate native file dialogs,
-directory uploads, file-chooser buttons, wildcard paths, or file discovery.
-
+`upload_file` requires exact absolute paths plus an explicit host allowlist or
+allowed root. It supports direct HTML file inputs, redacts local paths in
+receipts, and can verify legitimate input replacement or attachment UI changes.
 [`examples/plans/upload_file.json`](./examples/plans/upload_file.json) is a
-portable template: replace its `/absolute/path/to/...` values with the exact
-authorized paths for your host before running it.
+portable template: replace its `/absolute/path/to/...` values before running.
 
-`select_combobox_option` handles associated custom combobox/listbox controls
-only when one explicit option matches and remains selected after interaction.
-Typing or blindly pressing Enter is never treated as selection.
+`select_combobox_option` requires one explicitly matching associated option and
+verifies that the selection persisted. Typing or blindly pressing Enter is not
+treated as selection.
 
-## Receipts, evidence, and network assertions
+Network expectations can require observed request/response metadata, method,
+query-free URL/path matching, status, and observable timing. Exactly one
+post-action match is required; ambiguity is `INDETERMINATE`. An explicit
+`NetworkArtifactRequest` can write a bounded sanitized trace reference.
 
-Receipt schema **1.8.0** separates truth from diagnostics:
+Hosts provide secrets through `SecretProvider`; plans carry opaque
+`SecretReference` values and resolved values are used ephemerally, never
+persisted or logged. WebAuthn participation is similarly explicit and
+host-controlled: the runtime exchanges bounded metadata/status only, and a
+host callback alone is not browser verification.
 
-1. **Core Receipt** — compact deterministic verdict, status, target summary,
-   timing, and session/page identity.
-2. **Bounded Evidence** — sanitized failure, freshness, action, and network
-   evidence sufficient to justify the verdict.
-3. **Artifacts** — optional external references such as redacted screenshots
-   or a bounded sanitized network trace; never raw paths, image bytes, headers,
-   or request/response bodies.
+For the exact network, portable-state, profile, secret, and WebAuthn boundaries,
+see [remaining infrastructure boundaries](./Engineering/REMAINING_INFRASTRUCTURE_BOUNDARIES.md).
 
-Network assertions can require a request or response, HTTP method, bounded
-query-free URL/path match, status, and observable request-to-response timing.
-Exactly one post-action match is required; ambiguity is `INDETERMINATE`.
-Per-operation HAR is deliberately unsupported because it is context-wide and
-can capture unrelated traffic.
+## Boundaries and limitations
 
-See the [receipt architecture](./Engineering/THREE_LAYER_RECEIPT_ARCHITECTURE.md)
-and [network/state/authentication boundaries](./Engineering/REMAINING_INFRASTRUCTURE_BOUNDARIES.md).
-
-## Secrets and WebAuthn
-
-Hosts may provide a `SecretProvider`; plans carry only opaque
-`SecretReference` values and the runtime resolves them just in time into an
-ephemeral buffer for one fill. Resolved values are not persisted, serialized,
-or logged.
-
-WebAuthn participation is explicit and host-controlled. DingDongDitch sends a
-bounded metadata-only transport event and records completed, rejected,
-unsupported, timeout, or indeterminate participation. It does not control a
-native authenticator, create virtual credentials, extract private keys, supply
-assertions, or bypass authentication. A host callback alone is not browser
-verification.
-
-## Project boundaries
-
-- Hosts declare URLs, targets, actions, guards, waits, and expected outcomes.
-- Malformed, ambiguous, stale, unsupported, or unverifiable input fails closed.
-- Plans are ordered; there are no arbitrary loops, DAGs, autonomous retries,
-  natural-language planning, or site-specific browser logic.
-- Arbitrary JavaScript execution from plans is unsupported.
+- No autonomous planning, goal invention, silent locator healing, arbitrary
+  retries, arbitrary predicates, loops, or general workflow/DAG engine.
+- No site-specific browser or authentication logic, arbitrary JavaScript from
+  plans, or browser-engine fallback. Native Safari is unsupported.
+- No credential-vault behavior, plaintext secret persistence, native WebAuthn
+  authenticator control, virtual authenticators, private-key extraction, or
+  authentication bypass.
+- No per-operation HAR; only explicit bounded sanitized network traces are
+  supported. Request/response bodies and headers are not captured as evidence.
+- No native file-dialog automation, directory uploads, file-chooser trigger
+  buttons, wildcard paths, or implicit file discovery.
+- No active-context IndexedDB import or portable sessionStorage, password
+  managers, browser-profile internals, extensions, caches, history, or passkeys.
+- No existing-profile migration between engines. Firefox/WebKit existing user
+  profiles are unsupported.
 
 See [Engineering Principles](./Engineering/ENGINEERING_PRINCIPLES.md),
 [Non-Goals](./Engineering/NON_GOALS.md), and the
 [plan-runner documentation](./Engineering/Phase%203/PLAN_RUNNER_CLI.md).
+
+## Further reading
+
+- [JSON execution plans](./examples/plans/README.md)
+- [Stateful session API and ownership](./Engineering/Phase%203/STATEFUL_SESSIONS.md)
+- [Nested iframe targeting](./Engineering/Phase%203/IFRAME_TARGETING.md)
+- [Receipt/evidence/artifact architecture](./Engineering/THREE_LAYER_RECEIPT_ARCHITECTURE.md)
+- [Network, state, profile, secret, and WebAuthn boundaries](./Engineering/REMAINING_INFRASTRUCTURE_BOUNDARIES.md)
 
 ## Roadmap
 

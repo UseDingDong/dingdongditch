@@ -32,7 +32,8 @@ python -m dingdongditch run-plan examples/plans/basic_navigation.json --output a
 2. Set `plan.plan_id`.
 3. Set each operation's `url` to an absolute `http(s)://` URL or a relative
    filesystem path (resolved against the plan file directory).
-4. Declare explicit `action`, `locator` / optional `frame` / wait targets, and
+4. Declare explicit `action`, `locator` / optional `frame` or `frame_path` /
+   wait targets, and
    `expectations`.
 5. Run with `python -m dingdongditch run-plan path/to/your_plan.json`.
 
