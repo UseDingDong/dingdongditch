@@ -7,19 +7,103 @@ operations, verifies the resulting browser state, and returns structured
 receipts instead of guessing, healing ambiguous locators, or inventing work.
 
 ```text
-External AI / Agent / Host
-        | authors an ExecutionPlan or calls the API
-        v
-    DingDongDitch
-        | bounded browser dispatch and fresh observation
-        v
-      Browser
-        | verification and structured receipt
-        v
-External AI / Agent / Host
+External Agent / Planner
+        ↓
+DingDongDitch Machine Contract
+        ↓
+ExecutionPlan
+        ↓
+DingDongDitch Runtime
+        ↓
+Browser
+        ↓
+Structured Receipt
 ```
 
 It is execution infrastructure, not an AI agent or a workflow engine.
+
+## Connect Any Agent
+
+v0.4.1 publishes a versioned, Draft 2020-12 machine contract for external
+planners. The generic JSON Schema path is the primary integration mechanism;
+vendor envelopes are optional conveniences.
+
+Your model is not part of the DingDongDitch architecture. It does not matter
+whether the plan comes from GPT, Claude, Gemini, Grok, DeepSeek, Llama, Qwen,
+another hosted model, a local model, an experimental model, or an agent you
+are building yourself. If the host can produce a valid DingDongDitch plan that
+satisfies the published machine contract, DingDongDitch can execute it.
+
+That includes future models, private/internal company models, fine-tuned
+models, locally hosted and open-source models, experimental research agents,
+personal agent projects, and deterministic non-LLM planners. This is an
+execution-interface compatibility claim, not a claim that every planner can
+reliably produce valid plans. DingDongDitch does not integrate with a model's
+reasoning; it defines the execution boundary beneath it. If a system can emit
+the contract, it can target the runtime.
+
+```text
+planner/model
+      ↓
+canonical DingDongDitch JSON Schema
+      ↓
+PlanDocument → parse/validate → execute
+      ↓
+structured receipt
+```
+
+```python
+import dingdongditch as dingdong
+
+# Give this vendor-neutral declaration to any system that can emit JSON.
+tool = dingdong.execution_plan_tool()
+schema = dingdong.execution_schema()
+
+# The model call is deliberately outside DingDongDitch.
+raw_document = {
+    "schema_version": "1.0.0",
+    "browser": {"engine": "chromium", "channel": "bundled", "headless": True},
+    "plan": {
+        "plan_id": "example",
+        "operations": [{
+            "operation_id": "open-example",
+            "url": "https://example.com",
+            "action": {"type": "navigate"},
+            "expectations": [],
+        }],
+    },
+}
+
+# `raw_document` could instead come from a local program, a private model,
+# a hosted model, or a deterministic planner.
+document = dingdong.parse_plan_document(raw_document)
+receipt = dingdong.execute_plan(document.plan)
+assert dingdong.parse_plan_receipt(receipt.to_dict()).plan_id == "example"
+```
+
+`parse_execution_plan(raw_document)` is also public when a host wants the
+typed `ExecutionPlan` directly. Use `dingdong.execution_schema()` for the
+canonical `PlanDocument` JSON Schema, or `dingdongditch schema plan-document`
+from the CLI. No integration needs to import `plan_json` or recreate
+DingDongDitch enums.
+
+## Agent Integration Guides
+
+The [agent integration guide](./Engineering/AGENT_INTEGRATION_GUIDE.md) covers
+the vendor-neutral path first, then optional dependency-free envelopes for
+OpenAI / GPT / Codex, Anthropic Claude / Claude Code, and Google Gemini. It
+also documents the canonical-schema path for xAI Grok, DeepSeek, Meta Llama,
+Qwen, Mistral, Ollama/local models, OpenAI-compatible API servers, generic
+tool-calling and structured-output agents, custom/private models,
+experimental/local agents without a vendor SDK, and non-LLM planners.
+
+The guide also covers public schema-export APIs, `execution_plan_tool()`,
+`parse_plan_document()` / `parse_execution_plan()`, structured
+`ContractValidationError` / `ValidationIssue` handling, CLI export, and
+validated `ExecutionReceipt`, `PlanReceipt`, and `PageObservation` consumption.
+The generic schema remains authoritative; optional
+`dingdongditch.adapters.openai`, `.anthropic`, and `.gemini` modules only
+reshape that same contract.
 
 ## Quick start
 
@@ -56,7 +140,7 @@ See the runnable [host API example](./examples/host_execution_plan.py) and the
 [JSON plan guide](./examples/plans/README.md). The CLI and runtime never
 author plans, reinterpret intent, or choose recovery steps.
 
-## What v0.4.0 provides
+## What v0.4.1 provides
 
 - Deterministic browser actions, declared waits, page operations, and strict
   target cardinality across Playwright Chromium, Firefox, and WebKit.

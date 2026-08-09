@@ -1,0 +1,1514 @@
+{
+  "$defs": {
+    "ActiveDomElement": {
+      "additionalProperties": false,
+      "properties": {
+        "editable": {
+          "type": "boolean"
+        },
+        "focusable": {
+          "type": "boolean"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tag": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tag",
+        "id",
+        "role",
+        "editable",
+        "focusable",
+        "visible"
+      ],
+      "type": "object"
+    },
+    "ActiveFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "name"
+      ],
+      "type": "object"
+    },
+    "AnyObject": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "EvidenceSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "type": "string"
+        },
+        "collected_at_ms": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "signal_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "signal_id",
+        "kind",
+        "availability",
+        "collected_at_ms",
+        "payload",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "ExpectationResult": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "evidence_timestamp_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expectation_id": {
+          "type": "string"
+        },
+        "expectation_type": {
+          "type": "string"
+        },
+        "expected": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "failure_evidence": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "freshness_ok": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "fail",
+            "indeterminate"
+          ]
+        }
+      },
+      "required": [
+        "expectation_id",
+        "expectation_type",
+        "expected",
+        "observed",
+        "result",
+        "evidence_refs",
+        "explanation",
+        "freshness_ok",
+        "failure_evidence"
+      ],
+      "type": "object"
+    },
+    "FocusState": {
+      "additionalProperties": true,
+      "properties": {
+        "active_dom_element": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ActiveDomElement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_frame": {
+          "$ref": "#/$defs/ActiveFrame"
+        },
+        "focused_element_accessible_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "focused_element_editable": {
+          "type": "boolean"
+        },
+        "focused_element_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "focused_element_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inside_dialog_or_overlay": {
+          "type": "boolean"
+        },
+        "page_has_focus": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "page_has_focus",
+        "focused_element_id",
+        "focused_element_role",
+        "focused_element_accessible_name",
+        "focused_element_editable",
+        "active_frame",
+        "active_dom_element",
+        "inside_dialog_or_overlay"
+      ],
+      "type": "object"
+    },
+    "FreshnessEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "action_started_at_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "type": "string"
+        },
+        "policy_max_age_ms": {
+          "type": "integer"
+        },
+        "stale_signal_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "verification_completed_at_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "policy_max_age_ms",
+        "action_started_at_ms",
+        "verification_completed_at_ms",
+        "stale_signal_ids",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "Geometry": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "LocatorCandidate": {
+      "additionalProperties": true,
+      "properties": {
+        "confidence": {
+          "type": "number"
+        },
+        "known_ambiguity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "locator_type": {
+          "type": "string"
+        },
+        "locator_value": {},
+        "match_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unique": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "locator_type",
+        "locator_value",
+        "confidence",
+        "unique"
+      ],
+      "type": "object"
+    },
+    "Observation": {
+      "additionalProperties": false,
+      "properties": {
+        "browser_profile": {
+          "type": "string"
+        },
+        "captured_at_ms": {
+          "type": "integer"
+        },
+        "commit_id": {
+          "type": "string"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/ObservationDiagnostics"
+        },
+        "document": {
+          "$ref": "#/$defs/PageDocumentMetadata"
+        },
+        "focus": {
+          "$ref": "#/$defs/FocusState"
+        },
+        "freshness": {
+          "$ref": "#/$defs/ObservationFreshness"
+        },
+        "interactive_elements": {
+          "items": {
+            "$ref": "#/$defs/ObservedElement"
+          },
+          "type": "array"
+        },
+        "observation_hash": {
+          "type": "string"
+        },
+        "observation_id": {
+          "type": "string"
+        },
+        "overlays": {
+          "items": {
+            "$ref": "#/$defs/Overlay"
+          },
+          "type": "array"
+        },
+        "regions": {
+          "items": {
+            "$ref": "#/$defs/ObservedRegion"
+          },
+          "type": "array"
+        },
+        "scroll_context": {
+          "$ref": "#/$defs/ScrollContext"
+        },
+        "snapshot_id": {
+          "type": "string"
+        },
+        "spatial_relationships": {
+          "items": {
+            "$ref": "#/$defs/RelationshipEvidence"
+          },
+          "type": "array"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "transaction_id": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "viewport": {
+          "$ref": "#/$defs/Viewport"
+        },
+        "visible_text": {
+          "items": {
+            "$ref": "#/$defs/ObservedTextBlock"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "observation_id",
+        "timestamp",
+        "captured_at_ms",
+        "browser_profile",
+        "url",
+        "title",
+        "viewport",
+        "document",
+        "focus",
+        "overlays",
+        "regions",
+        "visible_text",
+        "interactive_elements",
+        "spatial_relationships",
+        "scroll_context",
+        "freshness",
+        "diagnostics",
+        "transaction_id",
+        "snapshot_id",
+        "commit_id",
+        "observation_hash"
+      ],
+      "type": "object"
+    },
+    "ObservationDiagnostics": {
+      "additionalProperties": true,
+      "properties": {
+        "capture_duration_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "counts_before_limits": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "evidence_sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "timing": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "transaction": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "truncated": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "capture_duration_ms",
+        "timing",
+        "truncated",
+        "counts_before_limits",
+        "evidence_sources",
+        "transaction"
+      ],
+      "type": "object"
+    },
+    "ObservationFreshness": {
+      "additionalProperties": true,
+      "properties": {
+        "captured_at_ms": {
+          "type": "integer"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "max_age_ms": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "fingerprint",
+        "max_age_ms",
+        "page_id",
+        "captured_at_ms"
+      ],
+      "type": "object"
+    },
+    "ObservationSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "collected_at_ms": {
+          "type": "integer"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "signal_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "collected_at_ms"
+      ],
+      "type": "object"
+    },
+    "ObservedElement": {
+      "additionalProperties": true,
+      "properties": {
+        "accessible_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bounds_normalized": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "bounds_px": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "center_normalized": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        "center_px": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        "checked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "current_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dom_tag": {
+          "type": "string"
+        },
+        "editable": {
+          "type": "boolean"
+        },
+        "element_id": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "expanded": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "focusable": {
+          "type": "boolean"
+        },
+        "focused": {
+          "type": "boolean"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "locator_candidates": {
+          "items": {
+            "$ref": "#/$defs/LocatorCandidate"
+          },
+          "type": "array"
+        },
+        "node_continuity_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "occlusion_state": {
+          "type": "string"
+        },
+        "owning_region_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent_interactive_element_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "placeholder": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pressed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "selected": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selected_state_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "semantic_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "useful_attributes": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "value_redacted": {
+          "type": "boolean"
+        },
+        "viewport_inclusion": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "visible_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "element_id",
+        "dom_tag",
+        "visible",
+        "enabled",
+        "editable",
+        "focusable",
+        "focused",
+        "value_redacted"
+      ],
+      "type": "object"
+    },
+    "ObservedRegion": {
+      "additionalProperties": true,
+      "properties": {
+        "accessible_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bounds_normalized": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "bounds_px": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "child_region_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "interactive_element_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "parent_region_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region_id": {
+          "type": "string"
+        },
+        "semantic_role": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "region_id",
+        "semantic_role",
+        "visible",
+        "bounds_px",
+        "bounds_normalized"
+      ],
+      "type": "object"
+    },
+    "ObservedTextBlock": {
+      "additionalProperties": true,
+      "properties": {
+        "bounds_normalized": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "bounds_px": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "owning_region_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "text_block_id": {
+          "type": "string"
+        },
+        "text_group_id": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text_block_id",
+        "text_group_id",
+        "text",
+        "bounds_px",
+        "bounds_normalized",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "Overlay": {
+      "additionalProperties": true,
+      "properties": {
+        "accessible_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocking": {
+          "type": "boolean"
+        },
+        "bounds_normalized": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "bounds_px": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "contained_interactive_element_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "overlay_id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "z_index": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "overlay_id",
+        "role",
+        "bounds_px",
+        "bounds_normalized",
+        "blocking"
+      ],
+      "type": "object"
+    },
+    "PageDocumentMetadata": {
+      "additionalProperties": true,
+      "properties": {
+        "height": {
+          "type": "number"
+        },
+        "scroll_x": {
+          "type": "number"
+        },
+        "scroll_y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "scroll_x",
+        "scroll_y"
+      ],
+      "type": "object"
+    },
+    "RecoveryAttempt": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_index": {
+          "type": "integer"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "occurred_at_ms": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "attempt_index",
+        "occurred_at_ms",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "RelationshipEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "center_distance_px": {
+          "type": "number"
+        },
+        "euclidean_distance_px": {
+          "type": "number"
+        },
+        "horizontal_distance_px": {
+          "type": "number"
+        },
+        "overlap_percentage": {
+          "type": "number"
+        },
+        "relationship_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_element_id": {
+          "type": "string"
+        },
+        "target_element_id": {
+          "type": "string"
+        },
+        "vertical_distance_px": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "source_element_id",
+        "target_element_id",
+        "relationship_types",
+        "horizontal_distance_px",
+        "vertical_distance_px",
+        "euclidean_distance_px",
+        "center_distance_px",
+        "overlap_percentage"
+      ],
+      "type": "object"
+    },
+    "ScrollContext": {
+      "additionalProperties": true,
+      "properties": {
+        "can_scroll_down": {
+          "type": "boolean"
+        },
+        "can_scroll_up": {
+          "type": "boolean"
+        },
+        "height": {
+          "type": "number"
+        },
+        "scroll_x": {
+          "type": "number"
+        },
+        "scroll_y": {
+          "type": "number"
+        },
+        "scrollable_containers": {
+          "items": {
+            "$ref": "#/$defs/ScrollableContainer"
+          },
+          "type": "array"
+        },
+        "viewport_height": {
+          "type": "number"
+        },
+        "viewport_width": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "scroll_x",
+        "scroll_y",
+        "viewport_width",
+        "viewport_height",
+        "can_scroll_up",
+        "can_scroll_down",
+        "scrollable_containers"
+      ],
+      "type": "object"
+    },
+    "ScrollableContainer": {
+      "additionalProperties": false,
+      "properties": {
+        "bounds_px": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "client_height": {
+          "type": "number"
+        },
+        "client_width": {
+          "type": "number"
+        },
+        "contained_interactive_element_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "contained_region_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "container_id": {
+          "type": "string"
+        },
+        "max_scroll_x": {
+          "type": "number"
+        },
+        "max_scroll_y": {
+          "type": "number"
+        },
+        "scroll_height": {
+          "type": "number"
+        },
+        "scroll_width": {
+          "type": "number"
+        },
+        "scroll_x": {
+          "type": "number"
+        },
+        "scroll_y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "container_id",
+        "bounds_px",
+        "scroll_x",
+        "scroll_y",
+        "scroll_width",
+        "scroll_height",
+        "client_width",
+        "client_height",
+        "max_scroll_x",
+        "max_scroll_y",
+        "contained_region_ids",
+        "contained_interactive_element_ids"
+      ],
+      "type": "object"
+    },
+    "Viewport": {
+      "additionalProperties": true,
+      "properties": {
+        "device_pixel_ratio": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "device_pixel_ratio"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.dingdongditch.dev/machine-contract/1.0.0/execution-receipt.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action_completed_at_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "action_evidence": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "action_executed_successfully": {
+      "type": "boolean"
+    },
+    "action_started_at_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "action_type": {
+      "type": "string"
+    },
+    "artifacts": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "backend_identity": {
+      "type": "string"
+    },
+    "browser": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "browser_identity": {
+      "type": "string"
+    },
+    "cleanup": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dispatch_document_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceSignal"
+      },
+      "type": "array"
+    },
+    "execution_error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "execution_status": {
+      "type": "string"
+    },
+    "expectation_evidence": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "expectation_results": {
+      "items": {
+        "$ref": "#/$defs/ExpectationResult"
+      },
+      "type": "array"
+    },
+    "expectations_declared": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "failure_kind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "finished_at_ms": {
+      "type": "integer"
+    },
+    "freshness": {
+      "$ref": "#/$defs/FreshnessEvaluation"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "navigation_occurred": {
+      "type": "boolean"
+    },
+    "operation_id": {
+      "type": "string"
+    },
+    "operation_timing": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "page_precondition": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "page_transition": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "post_action_observation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObservationSummary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pre_action_observation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObservationSummary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "recovery_attempts": {
+      "items": {
+        "$ref": "#/$defs/RecoveryAttempt"
+      },
+      "type": "array"
+    },
+    "runtime_version": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.8.0"
+    },
+    "started_at_ms": {
+      "type": "integer"
+    },
+    "target_locator": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target_resolution": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target_url": {
+      "type": "string"
+    },
+    "telemetry": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "verdict": {
+      "enum": [
+        "VERIFIED",
+        "NOT_VERIFIED",
+        "EXECUTION_FAILED",
+        "INDETERMINATE"
+      ]
+    },
+    "verification_completed_at_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "operation_id",
+    "verdict",
+    "action_type",
+    "target_locator",
+    "target_resolution",
+    "target_url",
+    "started_at_ms",
+    "finished_at_ms",
+    "action_started_at_ms",
+    "action_completed_at_ms",
+    "verification_completed_at_ms",
+    "execution_status",
+    "execution_error",
+    "failure_kind",
+    "action_executed_successfully",
+    "action_evidence",
+    "page_precondition",
+    "navigation_occurred",
+    "dispatch_document_url",
+    "telemetry",
+    "operation_timing",
+    "expectation_evidence",
+    "artifacts",
+    "cleanup",
+    "page_transition",
+    "expectations_declared",
+    "pre_action_observation",
+    "post_action_observation",
+    "expectation_results",
+    "evidence",
+    "freshness",
+    "recovery_attempts",
+    "limitations",
+    "backend_identity",
+    "browser_identity",
+    "browser",
+    "runtime_version"
+  ],
+  "title": "DingDongDitch ExecutionReceipt",
+  "type": "object"
+}

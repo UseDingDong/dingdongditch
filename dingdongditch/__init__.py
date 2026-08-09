@@ -4,7 +4,7 @@ Public API for typed contracts and execute_operation / execute_plan.
 Does not include a planner, site explorer, or workflow author.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 from dingdongditch.contract.browser import (
     BrowserChannel,
@@ -158,6 +158,30 @@ from dingdongditch.authentication import (
     WebAuthnParticipationRequest, WebAuthnParticipationStatus, WebAuthnTransport,
     WebAuthnTransportEvent, WebAuthnTransportResult,
 )
+from dingdongditch.machine_contract import (
+    MACHINE_CONTRACT_VERSION,
+    ContractValidationError,
+    PlanDocument,
+    ValidationIssue,
+    execution_plan_schema,
+    execution_plan_tool,
+    execution_receipt_schema,
+    execution_schema,
+    observation_schema,
+    operation_schema,
+    parse_execution_plan,
+    parse_execution_receipt,
+    parse_operation,
+    parse_plan_document,
+    parse_plan_receipt,
+    parse_receipt,
+    plan_document_schema,
+    plan_receipt_schema,
+    published_schema_resource,
+    public_schema_names,
+    serialize_execution_plan,
+    serialize_plan_document,
+)
 
 __all__ = [
     "__version__",
@@ -306,4 +330,26 @@ __all__ = [
     "GeminiApplicationLifecycleAdapter",
     "UnknownApplicationLifecycleAdapter",
     "select_application_lifecycle_adapter",
+    "MACHINE_CONTRACT_VERSION",
+    "PlanDocument",
+    "ValidationIssue",
+    "ContractValidationError",
+    "plan_document_schema",
+    "execution_schema",
+    "execution_plan_schema",
+    "execution_plan_tool",
+    "operation_schema",
+    "observation_schema",
+    "execution_receipt_schema",
+    "plan_receipt_schema",
+    "public_schema_names",
+    "published_schema_resource",
+    "parse_plan_document",
+    "parse_execution_plan",
+    "parse_operation",
+    "serialize_plan_document",
+    "serialize_execution_plan",
+    "parse_execution_receipt",
+    "parse_plan_receipt",
+    "parse_receipt",
 ]

@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from dingdongditch.contract_schema import MACHINE_CONTRACT_VERSION
+
 from dingdongditch.contract.browser import (
     BrowserChannel,
     BrowserConfig,
@@ -57,6 +59,11 @@ from dingdongditch.contract.download import (
     DownloadPolicy, DownloadRequest, DownloadTriggerAction,
 )
 from dingdongditch.contract.pointer import PointerMoveRequest, PointerOrigin
+from dingdongditch.contract.screenshot import (
+    DesktopRedactionRegion,
+    ScreenshotConfig,
+    ScreenshotPolicy,
+)
 
 
 class PlanLoadError(ValueError):
@@ -245,6 +252,82 @@ def _pointer_request_from_dict(data: Any, *, ctx: str) -> PointerMoveRequest:
         steps=raw.get("steps", 1),
         verify_position=raw.get("verify_position", True),
     )
+
+
+def _screenshot_config_from_dict(data: Any, *, ctx: str) -> ScreenshotConfig:
+    """Deserialize the public screenshot contract without adding CLI-only fields."""
+    raw = _require_mapping(data, ctx=ctx)
+    _reject_unknown(
+        raw,
+        frozenset(
+            {
+                "policy",
+                "full_page",
+                "max_per_operation",
+                "max_per_plan",
+                "artifact_root",
+                "sensitive_selectors",
+                "redact_password_inputs",
+                "mandatory_redaction",
+                "desktop_redaction_regions",
+                "capture_timeout_ms",
+            }
+        ),
+        ctx=ctx,
+    )
+    selectors = raw.get("sensitive_selectors", [])
+    if not isinstance(selectors, list) or any(
+        not isinstance(item, str) for item in selectors
+    ):
+        raise PlanLoadError(
+            f"{ctx}.sensitive_selectors must be a list of strings",
+            code="invalid_type",
+        )
+    regions_raw = raw.get("desktop_redaction_regions", [])
+    if not isinstance(regions_raw, list):
+        raise PlanLoadError(
+            f"{ctx}.desktop_redaction_regions must be a list", code="invalid_type"
+        )
+    regions: list[DesktopRedactionRegion] = []
+    for index, item in enumerate(regions_raw):
+        region_ctx = f"{ctx}.desktop_redaction_regions[{index}]"
+        region = _require_mapping(item, ctx=region_ctx)
+        _reject_unknown(region, frozenset({"region_id", "x", "y", "width", "height"}), ctx=region_ctx)
+        for field_name in ("region_id", "x", "y", "width", "height"):
+            if field_name not in region:
+                raise PlanLoadError(
+                    f"{region_ctx}: missing {field_name}", code="missing_field"
+                )
+        regions.append(
+            DesktopRedactionRegion(
+                region_id=region["region_id"],
+                x=region["x"],
+                y=region["y"],
+                width=region["width"],
+                height=region["height"],
+            )
+        )
+    config = ScreenshotConfig(
+        policy=_parse_enum(
+            ScreenshotPolicy,
+            raw.get("policy", ScreenshotPolicy.ON_FAILURE.value),
+            ctx=f"{ctx}.policy",
+        ),
+        full_page=raw.get("full_page", False),
+        max_per_operation=raw.get("max_per_operation", 4),
+        max_per_plan=raw.get("max_per_plan", 32),
+        artifact_root=raw.get("artifact_root", "artifacts/evidence_screenshots"),
+        sensitive_selectors=tuple(selectors),
+        redact_password_inputs=raw.get("redact_password_inputs", True),
+        mandatory_redaction=raw.get("mandatory_redaction", False),
+        desktop_redaction_regions=tuple(regions),
+        capture_timeout_ms=raw.get("capture_timeout_ms", 5_000),
+    )
+    try:
+        config.validate()
+    except ValueError as exc:
+        raise PlanLoadError(f"{ctx}: {exc}", code="invalid_plan") from exc
+    return config
 
 
 def _locator_from_dict(data: Any, *, ctx: str) -> Locator:
@@ -870,6 +953,7 @@ def operation_from_dict(
                 "cardinality",
                 "page_transition",
                 "dialog_contract",
+                "screenshot_config",
                 "page_precondition",
                 "target_preparation",
                 "guard",
@@ -1121,6 +1205,13 @@ def operation_from_dict(
             _dialog_contract_from_dict(raw["dialog_contract"], ctx=f"{ctx}.dialog_contract")
             if raw.get("dialog_contract") is not None else None
         ),
+        screenshot_config=(
+            _screenshot_config_from_dict(
+                raw["screenshot_config"], ctx=f"{ctx}.screenshot_config"
+            )
+            if raw.get("screenshot_config") is not None
+            else None
+        ),
         page_precondition=(
             _page_precondition_from_dict(
                 raw["page_precondition"], ctx=f"{ctx}.page_precondition"
@@ -1154,6 +1245,7 @@ def execution_plan_from_dict(
                 "initial_plan_timeout_ms",
                 "adaptive_timeout_enabled",
                 "max_plan_timeout_ms",
+                "screenshot_config",
             }
         ),
         ctx=ctx,
@@ -1206,6 +1298,13 @@ def execution_plan_from_dict(
         initial_plan_timeout_ms=initial_budget,
         adaptive_timeout_enabled=bool(adaptive) if adaptive is not None else False,
         max_plan_timeout_ms=max_budget,
+        screenshot_config=(
+            _screenshot_config_from_dict(
+                raw["screenshot_config"], ctx=f"{ctx}.screenshot_config"
+            )
+            if raw.get("screenshot_config") is not None
+            else None
+        ),
     )
     plan.validate()
     return plan
@@ -1218,13 +1317,37 @@ def plan_document_from_dict(
 ) -> ExecutionPlan:
     """Load a top-level plan document.
 
-    Supported shapes (both fail-closed on unknown fields):
+    Supported legacy and canonical shapes (all fail-closed on unknown fields):
 
-    1. ``{"browser": {...}, "plan": {...}}`` — preferred CLI document
-    2. ``{"plan_id": ..., "operations": [...], "browser_config"?: {...}}`` —
+    1. ``{"schema_version": "1.0.0", "browser": {...}, "plan": {...}}``
+       — canonical public machine-contract document
+    2. ``{"browser": {...}, "plan": {...}}`` — legacy CLI document
+    3. ``{"plan_id": ..., "operations": [...], "browser_config"?: {...}}`` —
        bare ExecutionPlan object
     """
     raw = _require_mapping(data, ctx="document")
+    if "schema_version" in raw:
+        _reject_unknown(raw, frozenset({"schema_version", "browser", "plan"}), ctx="document")
+        if raw.get("schema_version") != MACHINE_CONTRACT_VERSION:
+            raise PlanLoadError(
+                f"document.schema_version: unsupported machine contract version {raw.get('schema_version')!r}",
+                code="unsupported_contract_version",
+            )
+        if "plan" not in raw:
+            raise PlanLoadError("document: missing plan", code="missing_field")
+        if "browser" not in raw:
+            raise PlanLoadError("document: missing browser", code="missing_field")
+        if not isinstance(raw["plan"], dict):
+            raise PlanLoadError("document.plan: expected object", code="invalid_type")
+        if "browser_config" in raw["plan"]:
+            raise PlanLoadError(
+                "document.plan.browser_config: canonical documents put browser configuration at document.browser",
+                code="canonical_field_forbidden",
+            )
+        browser = browser_config_from_dict(raw["browser"], ctx="browser")
+        return execution_plan_from_dict(
+            raw["plan"], browser_config=browser, ctx="plan", plan_path=plan_path
+        )
     if "browser" in raw or "plan" in raw:
         _reject_unknown(raw, frozenset({"browser", "plan"}), ctx="document")
         if "plan" not in raw:

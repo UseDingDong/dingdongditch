@@ -26,6 +26,8 @@ from dingdongditch.plan_json import (
     load_plan_stdin,
 )
 from dingdongditch.runtime.plan_executor import execute_plan
+from dingdongditch.contract_schema import schema as public_schema
+from dingdongditch.machine_contract import public_schema_names
 
 # Stable process exit codes (documented in Engineering/Phase 3/PLAN_RUNNER_CLI.md).
 EXIT_SUCCESS = 0
@@ -132,6 +134,14 @@ def build_parser() -> argparse.ArgumentParser:
     import_cmd.add_argument("file")
     clear = session_sub.add_parser("clear")
     clear.add_argument("profile")
+
+    schema = sub.add_parser("schema", help="Print a public machine-readable JSON Schema")
+    schema.add_argument(
+        "target",
+        choices=("list", *public_schema_names()),
+        help="Schema to print, or 'list' for available names",
+    )
+    schema.add_argument("--output", default=None, help="Optional JSON output path")
     return parser
 
 
@@ -233,6 +243,25 @@ def session_command(args: argparse.Namespace) -> int:
             backend.stop()
 
 
+def schema_command(args: argparse.Namespace) -> int:
+    """Emit only JSON so schema output is safe to pipe into host tooling."""
+    payload: object = (
+        list(public_schema_names())
+        if args.target == "list"
+        else public_schema(args.target)
+    )
+    text = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True)
+    if args.output:
+        try:
+            publish_json(Path(args.output), payload, sort_keys=True)
+        except OSError as exc:
+            _print_err(f"error=schema_write_failed message={exc}")
+            return EXIT_INTERNAL_ERROR
+    else:
+        sys.stdout.write(text + "\n")
+    return EXIT_SUCCESS
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -242,6 +271,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return profile_command(args)
     if args.command == "session":
         return session_command(args)
+    if args.command == "schema":
+        return schema_command(args)
     _print_err(f"error=unknown_command message={args.command}")
     return EXIT_INVALID_INPUT
 

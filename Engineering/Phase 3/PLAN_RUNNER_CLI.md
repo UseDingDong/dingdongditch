@@ -128,7 +128,7 @@ printed; stack traces only with `--verbose` on unexpected internal failures.
 
 ## Receipt output
 
-`--output` writes the complete `PlanReceipt.to_dict()` JSON (schema 2.1.0),
+`--output` writes the complete `PlanReceipt.to_dict()` JSON (schema 2.2.0),
 including stable `browser_session_id` / `context_id` / `page_id` when a session
 was started.
 

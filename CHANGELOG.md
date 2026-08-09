@@ -7,6 +7,32 @@ breaking changes.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-08
+
+### Added
+
+- A versioned, public `PlanDocument` machine contract (1.0.0) for external
+  planners, with canonical Draft 2020-12 JSON Schema resources for plans,
+  operations, observations, execution receipts, and plan receipts.
+- Public schema export, parsing, serialization, receipt-decoding, generic tool
+  declaration, and structured `ContractValidationError` APIs. The `schema`
+  CLI command emits each installed schema as JSON.
+- Dependency-free OpenAI-style, Anthropic-style, and Gemini-style schema
+  envelopes that project the canonical contract without model clients, keys,
+  prompts, planning loops, or vendor-owned execution.
+- Public machine-contract documentation, a no-key external-planner example,
+  schema drift/packaging tests, and an installed-wheel smoke path.
+
+### Changed
+
+- README onboarding now treats model-neutral agent integration as a first-class
+  capability and links to guides for hosted, private, local, open-source,
+  experimental, generic, and deterministic non-LLM planners.
+- The plan JSON loader accepts the canonical versioned document while retaining
+  legacy bare-plan and legacy wrapper compatibility.
+- The documented PlanReceipt version is corrected to **2.2.0**, matching the
+  implementation.
+
 ## [0.4.0] - 2026-08-08
 
 ### Added
