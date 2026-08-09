@@ -68,6 +68,8 @@ STOPPING_VERDICTS = frozenset(
     }
 )
 
+MAX_PLAN_OPERATIONS = 256
+
 
 @dataclass
 class ExecutionPlan:
@@ -82,9 +84,15 @@ class ExecutionPlan:
     adaptive_timeout_enabled: bool = False
     max_plan_timeout_ms: int | None = None
     screenshot_config: Any | None = None
+    # Declarative transport field. A host must install this envelope at the
+    # execution boundary; parsing a plan is never itself an authority grant.
+    authority_envelope: Any | None = None
+    # Bounded, declared continuation topology.  It is part of the canonical
+    # PlanDocument representation and therefore part of a signed plan hash.
+    speculative_plans: tuple[Any, ...] = ()
 
     def validate(self) -> None:
-        if not self.plan_id or not str(self.plan_id).strip():
+        if not isinstance(self.plan_id, str) or not self.plan_id.strip() or len(self.plan_id) > 128:
             raise PlanValidationError(
                 "plan_id is required and must be non-empty",
                 failure_kind=PlanFailureKind.EMPTY_PLAN_ID,
@@ -93,6 +101,11 @@ class ExecutionPlan:
             raise PlanValidationError(
                 "plan must declare at least one operation",
                 failure_kind=PlanFailureKind.ZERO_OPERATIONS,
+            )
+        if len(self.operations) > MAX_PLAN_OPERATIONS:
+            raise PlanValidationError(
+                f"plan may declare at most {MAX_PLAN_OPERATIONS} operations",
+                failure_kind=PlanFailureKind.INVALID_OPERATION,
             )
         if self.failure_policy != FailurePolicy.STOP_ON_FAILURE:
             raise PlanValidationError(
@@ -120,8 +133,39 @@ class ExecutionPlan:
             if not isinstance(self.screenshot_config, ScreenshotConfig):
                 raise ValueError("screenshot_config must be a ScreenshotConfig")
             self.screenshot_config.validate()
+        if self.authority_envelope is not None:
+            from dingdongditch.contract.authority import AuthorityEnvelope
+            if not isinstance(self.authority_envelope, AuthorityEnvelope):
+                raise ValueError("authority_envelope must be an AuthorityEnvelope")
         for op in self.operations:
             op.validate()
+        from dingdongditch.contract.authority import canonical_json_bytes
+        from dingdongditch.contract.speculation import SpeculativePlan
+
+        operation_by_id = {operation.operation_id: operation for operation in self.operations}
+        continuation_ids: set[str] = set()
+        speculation_ids: set[str] = set()
+        if not isinstance(self.speculative_plans, tuple):
+            raise ValueError("speculative_plans must be a tuple")
+        if len(self.speculative_plans) > 8:
+            raise ValueError("plan may declare at most eight speculative plans")
+        for speculation in self.speculative_plans:
+            if not isinstance(speculation, SpeculativePlan):
+                raise ValueError("speculative_plans must contain SpeculativePlan values")
+            speculation.require_execution_binding()
+            if speculation.speculation_id in speculation_ids:
+                raise ValueError("speculation ids must be unique within one plan")
+            speculation_ids.add(speculation.speculation_id)
+            parent = operation_by_id.get(speculation.parent_operation_id)
+            if parent is None or speculation.parent_operation is None:
+                raise ValueError("speculation parent operation must be declared in plan operations")
+            if canonical_json_bytes(parent.to_public_dict()) != canonical_json_bytes(speculation.parent_operation.to_public_dict()):
+                raise ValueError("speculation parent operation does not exactly match plan operation")
+            for branch in speculation.branches:
+                operation_id = branch.continuation.operation_id
+                if operation_id in operation_by_id or operation_id in continuation_ids:
+                    raise ValueError("speculative continuation operation ids must be globally unique")
+                continuation_ids.add(operation_id)
 
     def _validate_plan_timing(self) -> None:
         if not isinstance(self.adaptive_timeout_enabled, bool):
@@ -176,8 +220,13 @@ class ExecutionPlan:
             "failure_policy": self.failure_policy.value,
             "operations": [op.operation_id for op in self.operations],
             "declared_step_count": len(self.operations),
+            "speculation_ids": [item.speculation_id for item in self.speculative_plans],
             "adaptive_timeout_enabled": self.adaptive_timeout_enabled,
             "screenshot_config": self.screenshot_config.describe() if self.screenshot_config is not None else None,
+            "authority_policy": (
+                {"policy_id": self.authority_envelope.policy_id, "policy_hash": self.authority_envelope.digest}
+                if self.authority_envelope is not None else None
+            ),
         }
         if self.initial_plan_timeout_ms is not None:
             data["initial_plan_timeout_ms"] = self.initial_plan_timeout_ms

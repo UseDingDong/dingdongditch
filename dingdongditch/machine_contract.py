@@ -24,6 +24,10 @@ from dingdongditch.contract.plan import (
 )
 from dingdongditch.contract.receipt import ExecutionReceipt, RECEIPT_SCHEMA_VERSION
 from dingdongditch.contract.verdict import Verdict
+from dingdongditch.contract.signed_plan import SignedPlanAuthority, SignedPlanError
+from dingdongditch.contract.identity import IdentityAssertion, IdentityError
+from dingdongditch.contract.attestation import ExecutionAttestation, AttestationError
+from dingdongditch.contract.speculation import SpeculativeBranch, SpeculativePlan
 from dingdongditch.contract_schema import (
     MACHINE_CONTRACT_VERSION,
     published_schema,
@@ -118,6 +122,10 @@ def operation_schema() -> dict[str, Any]:
     return schema("operation")
 
 
+def speculative_plan_schema() -> dict[str, Any]:
+    return schema("speculative-plan")
+
+
 def observation_schema() -> dict[str, Any]:
     return schema("observation")
 
@@ -128,6 +136,38 @@ def execution_receipt_schema() -> dict[str, Any]:
 
 def plan_receipt_schema() -> dict[str, Any]:
     return schema("plan-receipt")
+
+
+def prepared_operation_schema() -> dict[str, Any]:
+    return schema("prepared-operation")
+
+
+def agent_handoff_checkpoint_schema() -> dict[str, Any]:
+    return schema("agent-handoff-checkpoint")
+
+
+def agent_handoff_schema() -> dict[str, Any]:
+    return schema("agent-handoff")
+
+
+def signed_plan_authority_schema() -> dict[str, Any]:
+    return schema("signed-plan-authority")
+
+
+def identity_assertion_schema() -> dict[str, Any]:
+    return schema("identity-assertion")
+
+
+def agent_identity_schema() -> dict[str, Any]:
+    return schema("agent-identity")
+
+
+def mutation_evidence_schema() -> dict[str, Any]:
+    return schema("mutation-evidence")
+
+
+def execution_attestation_schema() -> dict[str, Any]:
+    return schema("execution-attestation")
 
 
 def public_schema_names() -> tuple[str, ...]:
@@ -149,8 +189,9 @@ def execution_plan_tool() -> dict[str, Any]:
         "name": "execute_browser_plan",
         "description": (
             "Emit one validated DingDongDitch PlanDocument for deterministic "
-            "browser execution. The runtime will not infer missing actions, "
-            "targets, waits, or expected outcomes."
+            "browser execution proposal. A trusted host must parse it and "
+            "submit operations through a governed agent session; the runtime "
+            "will not infer missing actions, targets, waits, or outcomes."
         ),
         "input_schema": execution_schema(),
     }
@@ -217,9 +258,22 @@ def _coerce_payload(payload: Mapping[str, Any] | str | bytes | bytearray) -> Map
     if isinstance(payload, Mapping):
         return payload
     if isinstance(payload, (str, bytes, bytearray)):
+        def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for key, value in pairs:
+                if key in result:
+                    # Do not echo attacker-controlled keys or values.  A
+                    # duplicate at any nested level makes a JSON schema view
+                    # and a runtime-parser view potentially disagree.
+                    raise ValueError("duplicate JSON object key")
+                result[key] = value
+            return result
+
+        def reject_nonfinite(_value: str) -> None:
+            raise ValueError("non-finite JSON number")
         try:
-            value = json.loads(payload)
-        except (TypeError, json.JSONDecodeError) as exc:
+            value = json.loads(payload, object_pairs_hook=reject_duplicate_keys, parse_constant=reject_nonfinite)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ContractValidationError(
                 [ValidationIssue("invalid_json", "", "payload must be valid JSON", "JSON object")]
             ) from exc
@@ -322,6 +376,42 @@ def parse_operation(payload: Mapping[str, Any] | str | bytes | bytearray) -> Any
     try:
         return operation_from_dict(raw)
     except (PlanLoadError, ValueError) as exc:
+        raise ContractValidationError([_issue_from_exception(exc, raw)]) from exc
+
+
+def parse_signed_plan_authority(payload: Mapping[str, Any] | str | bytes | bytearray) -> SignedPlanAuthority:
+    raw = _coerce_payload(payload)
+    try:
+        return SignedPlanAuthority.from_dict(raw)
+    except (SignedPlanError, TypeError, ValueError) as exc:
+        raise ContractValidationError([_issue_from_exception(exc, raw)]) from exc
+
+
+def parse_identity_assertion(payload: Mapping[str, Any] | str | bytes | bytearray) -> IdentityAssertion:
+    raw = _coerce_payload(payload)
+    try:
+        return IdentityAssertion.from_dict(raw)
+    except (IdentityError, TypeError, ValueError) as exc:
+        raise ContractValidationError([_issue_from_exception(exc, raw)]) from exc
+
+
+def parse_execution_attestation(payload: Mapping[str, Any] | str | bytes | bytearray) -> ExecutionAttestation:
+    raw = _coerce_payload(payload)
+    try:
+        return ExecutionAttestation.from_dict(raw)
+    except (AttestationError, TypeError, ValueError) as exc:
+        raise ContractValidationError([_issue_from_exception(exc, raw)]) from exc
+
+
+def parse_speculative_plan(payload: Mapping[str, Any] | str | bytes | bytearray) -> SpeculativePlan:
+    """Parse the bounded sidecar continuation contract for governed sessions."""
+    raw = _coerce_payload(payload)
+    try:
+        from dingdongditch.plan_json import _speculative_plan_from_dict
+        result = _speculative_plan_from_dict(raw, ctx="speculative")
+        result.require_execution_binding()
+        return result
+    except (PlanLoadError, TypeError, ValueError) as exc:
         raise ContractValidationError([_issue_from_exception(exc, raw)]) from exc
 
 
@@ -444,6 +534,10 @@ def _operation_to_dict(operation: Any) -> dict[str, Any]:
         result["network_artifact"] = operation.network_artifact.describe()
     if operation.webauthn is not None:
         result["webauthn"] = operation.webauthn.describe()
+    if operation.provenance:
+        result["provenance"] = [item.value for item in operation.provenance]
+    if operation.verification_quorum is not None:
+        result["verification_quorum"] = operation.verification_quorum.describe()
     return result
 
 
@@ -462,6 +556,9 @@ def serialize_execution_plan(plan: ExecutionPlan, *, include_browser_config: boo
     """Serialize an ExecutionPlan into its accepted public JSON form."""
     result = _primitive(plan)
     result["operations"] = [_operation_to_dict(operation) for operation in plan.operations]
+    # Explicit empty list removes omission/default ambiguity from the
+    # canonical PlanDocument hash.
+    result["speculative_plans"] = [item.to_dict() for item in plan.speculative_plans]
     result["browser_config"] = _browser_to_dict(plan.browser_config)
     if not include_browser_config:
         result.pop("browser_config", None)
@@ -491,6 +588,31 @@ def serialize_plan_document(document: PlanDocument | ExecutionPlan) -> dict[str,
 
 def _require_receipt_mapping(payload: Any, *, expected_version: str, kind: str) -> Mapping[str, Any]:
     raw = _coerce_payload(payload)
+    allowed_by_kind = {
+        "execution receipt": {
+            "schema_version", "operation_id", "verdict", "action_type", "target_locator", "target_resolution",
+            "target_url", "started_at_ms", "finished_at_ms", "action_started_at_ms", "action_completed_at_ms",
+            "verification_completed_at_ms", "execution_status", "execution_error", "failure_kind",
+            "action_executed_successfully", "action_evidence", "page_precondition", "navigation_occurred",
+            "dispatch_document_url", "telemetry", "operation_timing", "expectation_evidence", "artifacts",
+            "cleanup", "page_transition", "authority_decision", "transaction", "quorum_verification",
+            "control_epoch", "receipt_chain", "signed_plan", "identity", "mutation_arbitration", "speculation", "expectations_declared", "pre_action_observation",
+            "post_action_observation", "expectation_results", "evidence", "freshness", "recovery_attempts",
+            "limitations", "backend_identity", "browser_identity", "browser", "runtime_version",
+        },
+        "plan receipt": {
+            "schema_version", "plan_id", "plan_verdict", "completion_status", "failure_policy",
+            "declared_step_count", "attempted_step_count", "verified_step_count", "skipped_step_count",
+            "decisive_step_index", "decisive_operation_id", "failure_kind", "started_at_ms", "finished_at_ms",
+            "duration_ms", "browser", "backend_identity", "browser_session_id", "context_id", "page_id",
+            "steps", "limitations", "runtime_version", "execution_error", "plan", "plan_timing", "lifecycle", "telemetry",
+        },
+    }
+    unknown = set(raw) - allowed_by_kind[kind]
+    if unknown:
+        raise ContractValidationError([
+            ValidationIssue("unknown_field", "", f"{kind} contains unknown fields", "a documented field only")
+        ])
     if raw.get("schema_version") != expected_version:
         raise ContractValidationError(
             [ValidationIssue("unsupported_receipt_version", "/schema_version", f"unsupported {kind} schema version", expected_version, _safe_type(raw.get("schema_version"), "/schema_version"))]
@@ -500,10 +622,22 @@ def _require_receipt_mapping(payload: Any, *, expected_version: str, kind: str) 
 
 def parse_execution_receipt(payload: Mapping[str, Any] | str | bytes | bytearray) -> ExecutionReceipt:
     raw = _require_receipt_mapping(payload, expected_version=RECEIPT_SCHEMA_VERSION, kind="execution receipt")
+    control_epoch = raw.get("control_epoch")
+    if control_epoch is not None and (not isinstance(control_epoch, int) or isinstance(control_epoch, bool) or control_epoch < 0):
+        raise ContractValidationError([
+            ValidationIssue("invalid_type", "/control_epoch", "control_epoch must be a non-negative integer or null")
+        ])
     try:
         receipt = ExecutionReceipt(
-            schema_version=raw["schema_version"], operation_id=raw["operation_id"], verdict=Verdict(raw["verdict"]), action_type=raw["action_type"], target_locator=raw["target_locator"], target_resolution=raw["target_resolution"], target_url=raw["target_url"], started_at_ms=raw["started_at_ms"], finished_at_ms=raw["finished_at_ms"], action_started_at_ms=raw["action_started_at_ms"], action_completed_at_ms=raw["action_completed_at_ms"], verification_completed_at_ms=raw["verification_completed_at_ms"], execution_status=raw["execution_status"], execution_error=raw["execution_error"], failure_kind=raw["failure_kind"], action_executed_successfully=raw["action_executed_successfully"], action_evidence=raw["action_evidence"], page_precondition=raw["page_precondition"], navigation_occurred=raw["navigation_occurred"], dispatch_document_url=raw["dispatch_document_url"], telemetry=list(raw["telemetry"]), operation_timing=raw["operation_timing"], expectation_evidence=list(raw["expectation_evidence"]), artifacts=list(raw["artifacts"]), cleanup=raw["cleanup"], page_transition=raw["page_transition"], expectations_declared=raw["expectations_declared"], pre_action_observation=(ObservationSummary(**raw["pre_action_observation"]) if raw["pre_action_observation"] is not None else None), post_action_observation=(ObservationSummary(**raw["post_action_observation"]) if raw["post_action_observation"] is not None else None), expectation_results=[ExpectationResult(**item) for item in raw["expectation_results"]], evidence=[EvidenceSignal(signal_id=item["signal_id"], kind=SignalKind(item["kind"]), availability=SignalAvailability(item["availability"]), collected_at_ms=item["collected_at_ms"], payload=item["payload"], notes=item.get("notes", "")) for item in raw["evidence"]], freshness=FreshnessEvaluation(**raw["freshness"]), recovery_attempts=[RecoveryAttempt(**item) for item in raw["recovery_attempts"]], limitations=list(raw["limitations"]), backend_identity=raw["backend_identity"], browser_identity=raw["browser_identity"], browser=raw["browser"], runtime_version=raw["runtime_version"],
+            schema_version=raw["schema_version"], operation_id=raw["operation_id"], verdict=Verdict(raw["verdict"]), action_type=raw["action_type"], target_locator=raw["target_locator"], target_resolution=raw["target_resolution"], target_url=raw["target_url"], started_at_ms=raw["started_at_ms"], finished_at_ms=raw["finished_at_ms"], action_started_at_ms=raw["action_started_at_ms"], action_completed_at_ms=raw["action_completed_at_ms"], verification_completed_at_ms=raw["verification_completed_at_ms"], execution_status=raw["execution_status"], execution_error=raw["execution_error"], failure_kind=raw["failure_kind"], action_executed_successfully=raw["action_executed_successfully"], action_evidence=raw["action_evidence"], page_precondition=raw["page_precondition"], navigation_occurred=raw["navigation_occurred"], dispatch_document_url=raw["dispatch_document_url"], telemetry=list(raw["telemetry"]), operation_timing=raw["operation_timing"], expectation_evidence=list(raw["expectation_evidence"]), artifacts=list(raw["artifacts"]), cleanup=raw["cleanup"], page_transition=raw["page_transition"], authority_decision=raw.get("authority_decision"), transaction=raw.get("transaction"), expectations_declared=raw["expectations_declared"], pre_action_observation=(ObservationSummary(**raw["pre_action_observation"]) if raw["pre_action_observation"] is not None else None), post_action_observation=(ObservationSummary(**raw["post_action_observation"]) if raw["post_action_observation"] is not None else None), expectation_results=[ExpectationResult(**item) for item in raw["expectation_results"]], evidence=[EvidenceSignal(signal_id=item["signal_id"], kind=SignalKind(item["kind"]), availability=SignalAvailability(item["availability"]), collected_at_ms=item["collected_at_ms"], payload=item["payload"], notes=item.get("notes", "")) for item in raw["evidence"]], freshness=FreshnessEvaluation(**raw["freshness"]), recovery_attempts=[RecoveryAttempt(**item) for item in raw["recovery_attempts"]], limitations=list(raw["limitations"]), backend_identity=raw["backend_identity"], browser_identity=raw["browser_identity"], browser=raw["browser"], runtime_version=raw["runtime_version"],
         )
+        receipt.quorum_verification = raw.get("quorum_verification")
+        receipt.control_epoch = control_epoch
+        receipt.receipt_chain = raw.get("receipt_chain")
+        receipt.signed_plan = raw.get("signed_plan")
+        receipt.identity = raw.get("identity")
+        receipt.mutation_arbitration = raw.get("mutation_arbitration")
+        receipt.speculation = raw.get("speculation")
     except (KeyError, TypeError, ValueError) as exc:
         raise ContractValidationError([_issue_from_exception(exc, raw)]) from exc
     return receipt.seal()

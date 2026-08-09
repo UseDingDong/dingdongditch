@@ -39,6 +39,7 @@ from dingdongditch.contract.page import (
     PageTransition,
     PageTransitionPolicy,
 )
+from dingdongditch.contract.authority import ProvenanceClass
 from dingdongditch.contract.page_precondition import (
     FragmentPolicy,
     PageCondition,
@@ -64,6 +65,7 @@ from dingdongditch.contract.screenshot import (
     ScreenshotConfig,
     ScreenshotPolicy,
 )
+from dingdongditch.contract.speculation import SpeculativeBranch, SpeculativePlan
 
 
 class PlanLoadError(ValueError):
@@ -959,6 +961,8 @@ def operation_from_dict(
                 "guard",
                 "network_artifact",
                 "webauthn",
+                "provenance",
+                "verification_quorum",
             }
         ),
         ctx=ctx,
@@ -1021,6 +1025,42 @@ def operation_from_dict(
             )
         )
     guard = None
+    provenance: tuple[ProvenanceClass, ...] = ()
+    if raw.get("provenance") is not None:
+        if not isinstance(raw["provenance"], list):
+            raise PlanLoadError(f"{ctx}.provenance must be a list", code="invalid_type")
+        provenance = tuple(
+            _parse_enum(ProvenanceClass, item, ctx=f"{ctx}.provenance[{index}]")
+            for index, item in enumerate(raw["provenance"])
+        )
+    verification_quorum = None
+    if raw.get("verification_quorum") is not None:
+        from dingdongditch.contract.quorum import (
+            EvidenceSourceClass,
+            VerificationCheck,
+            VerificationPolicy,
+            VerificationQuorum,
+        )
+        quorum_raw = _require_mapping(raw["verification_quorum"], ctx=f"{ctx}.verification_quorum")
+        _reject_unknown(quorum_raw, frozenset({"policy", "required", "checks"}), ctx=f"{ctx}.verification_quorum")
+        checks_raw = quorum_raw.get("checks")
+        if not isinstance(checks_raw, list):
+            raise PlanLoadError(f"{ctx}.verification_quorum.checks must be a list", code="invalid_type")
+        checks = []
+        for index, item in enumerate(checks_raw):
+            check_ctx = f"{ctx}.verification_quorum.checks[{index}]"
+            check_raw = _require_mapping(item, ctx=check_ctx)
+            _reject_unknown(check_raw, frozenset({"verifier_id", "expectation_id", "evidence_source"}), ctx=check_ctx)
+            checks.append(VerificationCheck(
+                verifier_id=check_raw.get("verifier_id"),
+                expectation_id=check_raw.get("expectation_id"),
+                evidence_source=_parse_enum(EvidenceSourceClass, check_raw.get("evidence_source"), ctx=f"{check_ctx}.evidence_source"),
+            ))
+        verification_quorum = VerificationQuorum(
+            policy=_parse_enum(VerificationPolicy, quorum_raw.get("policy"), ctx=f"{ctx}.verification_quorum.policy"),
+            required=quorum_raw.get("required"),
+            checks=tuple(checks),
+        )
     network_artifact = None
     if raw.get("network_artifact") is not None:
         from dingdongditch.contract.network import (
@@ -1223,6 +1263,112 @@ def operation_from_dict(
         guard=guard,
         network_artifact=network_artifact,
         webauthn=webauthn,
+        provenance=provenance,
+        verification_quorum=verification_quorum,
+    )
+
+
+def _speculative_plan_from_dict(
+    data: Any,
+    *,
+    ctx: str,
+    plan_path: Path | None = None,
+) -> SpeculativePlan:
+    """Parse a bounded declared graph; execution still requires a parent bind."""
+    raw = _require_mapping(data, ctx=ctx)
+    _reject_unknown(
+        raw,
+        frozenset({"speculation_id", "parent_operation_id", "parent_operation", "max_depth", "branches"}),
+        ctx=ctx,
+    )
+    required = ("speculation_id", "parent_operation_id", "max_depth", "branches")
+    if any(key not in raw for key in required):
+        raise PlanLoadError(f"{ctx}: missing required speculative field", code="missing_field")
+    if not isinstance(raw["branches"], list):
+        raise PlanLoadError(f"{ctx}.branches must be a list", code="invalid_type")
+    if raw.get("parent_operation") is not None and not isinstance(raw["parent_operation"], dict):
+        raise PlanLoadError(f"{ctx}.parent_operation must be an object", code="invalid_type")
+    branches: list[SpeculativeBranch] = []
+    for index, item in enumerate(raw["branches"]):
+        branch_ctx = f"{ctx}.branches[{index}]"
+        branch = _require_mapping(item, ctx=branch_ctx)
+        _reject_unknown(branch, frozenset({"branch_id", "preconditions", "continuation"}), ctx=branch_ctx)
+        if "branch_id" not in branch or "continuation" not in branch:
+            raise PlanLoadError(f"{branch_ctx}: missing required field", code="missing_field")
+        if not isinstance(branch.get("preconditions"), list):
+            raise PlanLoadError(f"{branch_ctx}.preconditions must be a list", code="invalid_type")
+        branches.append(SpeculativeBranch(
+            branch_id=branch["branch_id"],
+            preconditions=tuple(
+                _expectation_from_dict(condition, ctx=f"{branch_ctx}.preconditions[{condition_index}]")
+                for condition_index, condition in enumerate(branch["preconditions"])
+            ),
+            continuation=operation_from_dict(branch["continuation"], ctx=f"{branch_ctx}.continuation", plan_path=plan_path),
+        ))
+    try:
+        result = SpeculativePlan(
+            speculation_id=raw["speculation_id"],
+            parent_operation_id=raw["parent_operation_id"],
+            parent_operation=(
+                operation_from_dict(raw["parent_operation"], ctx=f"{ctx}.parent_operation", plan_path=plan_path)
+                if raw.get("parent_operation") is not None else None
+            ),
+            max_depth=raw["max_depth"],
+            branches=tuple(branches),
+        )
+        result.validate()
+        return result
+    except (TypeError, ValueError) as exc:
+        raise PlanLoadError(f"{ctx}: invalid speculative plan", code="invalid_plan") from exc
+
+
+def _authority_envelope_from_dict(data: Any, *, ctx: str):
+    from dingdongditch.contract.authority import AuthorityEnvelope, ProvenanceClass
+    raw = _require_mapping(data, ctx=ctx)
+    allowed = frozenset({
+        "policy_id", "granted_authorities", "allowed_origins", "denied_origins",
+        "allowed_action_types", "denied_action_types", "allowed_file_names",
+        "allowed_secret_references", "max_upload_bytes", "irreversible_action_types",
+        "require_preparation_for", "required_authority_by_action", "expires_at_ms",
+        "max_action_count", "max_side_effect_count", "deny_untrusted_for_irreversible",
+        "transfer_prepared_operations", "allow_frame_actions",
+    })
+    _reject_unknown(raw, allowed, ctx=ctx)
+    if not isinstance(raw.get("policy_id"), str):
+        raise PlanLoadError(f"{ctx}.policy_id must be a string", code="invalid_type")
+    def strings(name: str) -> tuple[str, ...]:
+        value = raw.get(name, [])
+        if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+            raise PlanLoadError(f"{ctx}.{name} must be a list of strings", code="invalid_type")
+        return tuple(value)
+    grants_raw = raw.get("granted_authorities", [])
+    if not isinstance(grants_raw, list):
+        raise PlanLoadError(f"{ctx}.granted_authorities must be a list", code="invalid_type")
+    required_raw = raw.get("required_authority_by_action", {})
+    if not isinstance(required_raw, dict):
+        raise PlanLoadError(f"{ctx}.required_authority_by_action must be an object", code="invalid_type")
+    numeric_names = ("max_upload_bytes", "expires_at_ms", "max_action_count", "max_side_effect_count")
+    for name in numeric_names:
+        value = raw.get(name)
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+            raise PlanLoadError(f"{ctx}.{name} must be an integer", code="invalid_type")
+    for name in ("deny_untrusted_for_irreversible", "transfer_prepared_operations", "allow_frame_actions"):
+        if name in raw and not isinstance(raw[name], bool):
+            raise PlanLoadError(f"{ctx}.{name} must be a bool", code="invalid_type")
+    return AuthorityEnvelope(
+        policy_id=raw["policy_id"],
+        granted_authorities=tuple(_parse_enum(ProvenanceClass, item, ctx=f"{ctx}.granted_authorities[{index}]") for index, item in enumerate(grants_raw)),
+        allowed_origins=strings("allowed_origins"), denied_origins=strings("denied_origins"),
+        allowed_action_types=strings("allowed_action_types"), denied_action_types=strings("denied_action_types"),
+        allowed_file_names=strings("allowed_file_names"), allowed_secret_references=strings("allowed_secret_references"),
+        max_upload_bytes=raw.get("max_upload_bytes"), irreversible_action_types=strings("irreversible_action_types"),
+        require_preparation_for=strings("require_preparation_for"),
+        required_authority_by_action={key: _parse_enum(ProvenanceClass, value, ctx=f"{ctx}.required_authority_by_action.{key}") for key, value in required_raw.items()},
+        expires_at_ms=raw.get("expires_at_ms"), max_action_count=raw.get("max_action_count"),
+        max_side_effect_count=raw.get("max_side_effect_count"),
+        deny_untrusted_for_irreversible=raw.get("deny_untrusted_for_irreversible", False),
+        transfer_prepared_operations=raw.get("transfer_prepared_operations", False),
+        allow_frame_actions=raw.get("allow_frame_actions", False),
     )
 
 
@@ -1246,6 +1392,8 @@ def execution_plan_from_dict(
                 "adaptive_timeout_enabled",
                 "max_plan_timeout_ms",
                 "screenshot_config",
+                "authority_envelope",
+                "speculative_plans",
             }
         ),
         ctx=ctx,
@@ -1277,6 +1425,13 @@ def execution_plan_from_dict(
         )
         for i, item in enumerate(raw["operations"])
     ]
+    speculative_raw = raw.get("speculative_plans", [])
+    if not isinstance(speculative_raw, list):
+        raise PlanLoadError(f"{ctx}.speculative_plans must be a list", code="invalid_type")
+    speculative_plans = tuple(
+        _speculative_plan_from_dict(item, ctx=f"{ctx}.speculative_plans[{index}]", plan_path=plan_path)
+        for index, item in enumerate(speculative_raw)
+    )
     adaptive = raw.get("adaptive_timeout_enabled", False)
     if adaptive is not None and not isinstance(adaptive, bool):
         raise PlanLoadError(
@@ -1305,6 +1460,11 @@ def execution_plan_from_dict(
             if raw.get("screenshot_config") is not None
             else None
         ),
+        authority_envelope=(
+            _authority_envelope_from_dict(raw["authority_envelope"], ctx=f"{ctx}.authority_envelope")
+            if raw.get("authority_envelope") is not None else None
+        ),
+        speculative_plans=speculative_plans,
     )
     plan.validate()
     return plan
@@ -1451,4 +1611,6 @@ def apply_browser_overrides(
         initial_plan_timeout_ms=plan.initial_plan_timeout_ms,
         adaptive_timeout_enabled=plan.adaptive_timeout_enabled,
         max_plan_timeout_ms=plan.max_plan_timeout_ms,
+        screenshot_config=plan.screenshot_config,
+        authority_envelope=plan.authority_envelope,
     )

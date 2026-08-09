@@ -71,6 +71,22 @@ class ExecutionReceipt:
     artifacts: list[dict[str, Any]] | None = None
     cleanup: dict[str, Any] | None = None
     page_transition: dict[str, Any] | None = None
+    # Compact governance facts. Detailed policy remains host-owned.
+    authority_decision: dict[str, Any] | None = None
+    transaction: dict[str, Any] | None = None
+    quorum_verification: dict[str, Any] | None = None
+    # Session control epoch binds a receipt to the planner lease that caused
+    # the dispatch without recording a planner secret or vendor identity.
+    control_epoch: int | None = None
+    receipt_chain: dict[str, Any] | None = None
+    # Bounded pointer only; the public signed authorization object is retained
+    # by the host and never embedded in receipts.
+    signed_plan: dict[str, Any] | None = None
+    # Portable identity attribution, intentionally separate from policy and
+    # current controller lease.
+    identity: dict[str, Any] | None = None
+    mutation_arbitration: dict[str, Any] | None = None
+    speculation: dict[str, Any] | None = None
     _sealed: bool = False
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -115,6 +131,15 @@ class ExecutionReceipt:
             "artifacts": list(self.artifacts or []),
             "cleanup": self.cleanup,
             "page_transition": self.page_transition,
+            "authority_decision": self.authority_decision,
+            "transaction": self.transaction,
+            "quorum_verification": self.quorum_verification,
+            "control_epoch": self.control_epoch,
+            "receipt_chain": self.receipt_chain,
+            "signed_plan": self.signed_plan,
+            "identity": self.identity,
+            "mutation_arbitration": self.mutation_arbitration,
+            "speculation": self.speculation,
             "expectations_declared": self.expectations_declared,
             "pre_action_observation": (
                 self.pre_action_observation.to_dict() if self.pre_action_observation else None
@@ -175,6 +200,47 @@ class ExecutionReceipt:
                 if isinstance(webauthn, dict)
                 else None
             ),
+            "authority": (
+                {
+                    "outcome": (self.authority_decision or {}).get("outcome"),
+                    "policy_id": (self.authority_decision or {}).get("policy_id"),
+                    "policy_hash": (self.authority_decision or {}).get("policy_hash"),
+                    "rule_matched": (self.authority_decision or {}).get("rule_matched"),
+                }
+                if self.authority_decision is not None
+                else None
+            ),
+            "transaction": (
+                {
+                    "status": (self.transaction or {}).get("status"),
+                    "token_id": (self.transaction or {}).get("token_id"),
+                    "preparation_fingerprint": (self.transaction or {}).get("preparation_fingerprint"),
+                }
+                if self.transaction is not None
+                else None
+            ),
+            "quorum": (
+                {
+                    "verdict": (self.quorum_verification or {}).get("verdict"),
+                    "required": (self.quorum_verification or {}).get("required"),
+                    "achieved": (self.quorum_verification or {}).get("achieved"),
+                }
+                if self.quorum_verification is not None
+                else None
+            ),
+            "receipt_chain": (
+                {
+                    "receipt_hash": (self.receipt_chain or {}).get("receipt_hash"),
+                    "previous_receipt_hash": (self.receipt_chain or {}).get("previous_receipt_hash"),
+                }
+                if self.receipt_chain is not None
+                else None
+            ),
+            "control_epoch": self.control_epoch,
+            "signed_plan": self.signed_plan,
+            "identity": self.identity,
+            "mutation_arbitration": self.mutation_arbitration,
+            "speculation": self.speculation,
         }
 
     def to_bounded_evidence_dict(self) -> dict[str, Any]:
@@ -184,6 +250,15 @@ class ExecutionReceipt:
             "signals": [signal.to_dict() for signal in self.evidence],
             "action_evidence": self.action_evidence,
             "freshness": self.freshness.to_dict(),
+            "authority_decision": self.authority_decision,
+            "transaction": self.transaction,
+            "quorum_verification": self.quorum_verification,
+            "control_epoch": self.control_epoch,
+            "receipt_chain": self.receipt_chain,
+            "signed_plan": self.signed_plan,
+            "identity": self.identity,
+            "mutation_arbitration": self.mutation_arbitration,
+            "speculation": self.speculation,
         }
 
     def to_layered_dict(self) -> dict[str, Any]:

@@ -7,6 +7,63 @@ breaking changes.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-09
+
+### Added
+
+- Ten composable, host-governed execution controls: **Authority Firewall**,
+  browser **Two-Phase Commit**, **Quorum Verification**, cryptographic
+  **Receipt Chains** with externally retained checkpoints, and **Cross-Agent
+  Hot Handoff** for one retained live browser session.
+- **Signed Plan Authority**: trusted Ed25519 signing identities can authorize
+  one exact canonical `PlanDocument`, bounded by host policy, session scope,
+  identity scope, expiration, nonce replay limits, and ordered execution.
+- Vendor-neutral, user/host-owned **Agent Identity** assertions with trusted
+  registration, rotation, revocation, controller scope, handoff attribution,
+  signed-plan binding, and receipt attribution.
+- **Human/Agent Mutation Arbitration** with bounded mutation epochs and
+  conservative `external_unknown` attribution for observable browser changes.
+- Separate **Execution Attestation** statements, supporting host-attested and
+  externally keyed/process-backed attesters, offline verification, bounded
+  claims, challenges, and receipt-chain checkpoint binding.
+- Bounded **Transactional Speculative Execution**: declared one-level branch
+  preparation, deterministic exactly-one selection, revalidation, normal
+  authority/lease/mutation checks, and Two-Phase Commit for consequential
+  continuations.
+- Public schemas, parser/serializer support, governed agent APIs, adversarial
+  regression tests, and a deterministic local all-ten demonstration without
+  an external AI API.
+
+### Security hardening
+
+- Both adversarial review rounds hardened policy/origin canonicalization,
+  budgets, provenance propagation, secret-generation bindings, stale
+  preparation detection, quorum evidence independence, receipt-chain
+  checkpoints, handoff leases/epochs, and machine-contract parsing.
+- Signed speculative topology is now inside the canonical signed
+  `PlanDocument`: branch order, exact parent operation, preconditions,
+  continuations, verification, and transaction-relevant operation material
+  cannot be supplied as an unsigned sidecar.
+- Signature domains are separated for plan authority, identity assertions,
+  and attestations. Signed-plan validity is rechecked at dispatch; replay and
+  registry state are bounded. Attestation claims bind speculation outcomes and
+  expected offline verification context.
+
+### Trust model and limitations
+
+- Untrusted planners submit canonical proposals only through
+  `GovernedAgentSession` or authenticated `GovernedAgentService`. Trusted
+  hosts alone install policy, signer/identity/attester trust, secrets,
+  lifecycle, checkpoints, and handoff authority.
+- Receipt chaining is SHA-256 tamper evidence relative to an externally
+  retained checkpoint; it is not signing. Signed plans authorize exact plans.
+  Host attestation signs a host-produced claim. Independent attestation
+  additionally relies on a separately trusted key/process/service; it is not
+  hardware/TEE attestation or browser proof of user-visible reality.
+- DingDongDitch does not provide arbitrary browser/server rollback, semantic
+  prompt-injection immunity, universal detection of invisible page-JS state,
+  or a Python-process sandbox for raw trusted-host APIs.
+
 ## [0.4.1] - 2026-08-08
 
 ### Added

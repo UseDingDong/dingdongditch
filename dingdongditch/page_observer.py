@@ -506,7 +506,8 @@ class PageObserver:
             freshness={"fingerprint": fingerprint, "max_age_ms": options.freshness_max_age_ms,
                        "page_id": self.backend.page_id, "captured_at_ms": captured},
             diagnostics=diagnostics, transaction_id=transaction_id,
-            snapshot_id=snapshot_id, commit_id=commit_id, observation_hash="")
+            snapshot_id=snapshot_id, commit_id=commit_id, observation_hash="",
+            provenance=["web_untrusted"])
         while len(json.dumps(observation_values, ensure_ascii=False).encode()) > options.max_payload_bytes:
             diagnostics["truncated"]["payload"] = True
             if observation_values["visible_text"]: observation_values["visible_text"].pop()

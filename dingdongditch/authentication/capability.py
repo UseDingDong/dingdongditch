@@ -11,9 +11,13 @@ from .callbacks import AuthEvent, AuthenticationCallbacks
 from .errors import AuthenticationError, AuthenticationFailureKind
 from .profiles import ProfileManager
 from .secrets import (
+    SecretBinding,
     SecretProvider,
     SecretReference,
     SecretResolutionReceipt,
+    bind_secret,
+    assert_secret_binding,
+    resolve_bound_secret,
     resolve_secret,
 )
 from .portable_state import (
@@ -124,6 +128,35 @@ class AuthenticationCapability:
         """Resolve and fill one secret without retaining or reporting its value."""
         secret, receipt = resolve_secret(
             self.secrets, secret_reference, timeout_ms=timeout_ms
+        )
+        with secret:
+            try:
+                locator.fill(secret.reveal())
+            except Exception as exc:
+                raise AuthenticationError(
+                    "secret injection browser operation failed",
+                    kind=AuthenticationFailureKind.SESSION_IO_ERROR,
+                    recovery="Check the target and retry.",
+                ) from exc
+        return receipt
+
+    def bind_secret(self, secret_reference: SecretReference | str) -> SecretBinding:
+        """Bind a provider generation for a pending two-phase operation."""
+        return bind_secret(self.secrets, secret_reference)
+
+    def assert_secret_binding(self, secret_reference: SecretReference | str, binding: SecretBinding) -> None:
+        assert_secret_binding(self.secrets, secret_reference, binding)
+
+    def inject_bound(
+        self,
+        locator: Any,
+        secret_reference: SecretReference | str,
+        binding: SecretBinding,
+        *,
+        timeout_ms: int = 5_000,
+    ) -> SecretResolutionReceipt:
+        secret, receipt = resolve_bound_secret(
+            self.secrets, secret_reference, binding, timeout_ms=timeout_ms
         )
         with secret:
             try:

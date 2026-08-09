@@ -22,9 +22,28 @@ Structured Receipt
 
 It is execution infrastructure, not an AI agent or a workflow engine.
 
+## Execution governance
+
+Stateful hosts can opt into ten composable controls: **Authority Firewall**,
+browser **Two-Phase Commit**, **Quorum Verification**, SHA-256 receipt chains
+and checkpoints, **Cross-Agent Hot Handoff**, **Signed Plan Authority**,
+user-owned **Agent Identity**, human/agent **Mutation Arbitration**,
+host/external **Execution Attestation**, and bounded **Transactional
+Speculative Execution**. These controls enforce host-declared authority
+boundaries; they do not make prompt injection impossible or provide external
+server-side rollback. See [Execution governance](./Engineering/EXECUTION_GOVERNANCE.md)
+and run `python examples/complete_governance_demo.py` for a local deterministic
+all-ten demonstration without an AI API.
+
+For a new agent product, expose `GovernedAgentSession` (or authenticated
+`GovernedAgentService`) rather than raw execution helpers. `TrustedHostRuntime`
+retains policy installation, secrets, browser lifecycle, and handoff-token
+delivery; the machine contract is a proposal format. The exact trust boundary
+and limitations are in [Execution governance](./Engineering/EXECUTION_GOVERNANCE.md).
+
 ## Connect Any Agent
 
-v0.4.1 publishes a versioned, Draft 2020-12 machine contract for external
+v0.5.0 publishes a versioned, Draft 2020-12 machine contract for external
 planners. The generic JSON Schema path is the primary integration mechanism;
 vendor envelopes are optional conveniences.
 
@@ -77,8 +96,16 @@ raw_document = {
 # `raw_document` could instead come from a local program, a private model,
 # a hosted model, or a deterministic planner.
 document = dingdong.parse_plan_document(raw_document)
-receipt = dingdong.execute_plan(document.plan)
-assert dingdong.parse_plan_receipt(receipt.to_dict()).plan_id == "example"
+policy = dingdong.AuthorityEnvelope(
+    policy_id="host-policy",
+    granted_authorities=(dingdong.ProvenanceClass.HOST_POLICY,),
+    allowed_origins=("https://example.com",),
+    allowed_action_types=("navigate",),
+)
+host = dingdong.TrustedHostRuntime()  # trusted host owns policy/secrets/lifecycle
+agent = host.open_governed_agent_session(authority_envelope=policy, agent_id="planner-a")
+result = agent.execute(document.plan.operations[0])
+assert result.receipt.authority_decision["outcome"] == "AUTHORIZED"
 ```
 
 `parse_execution_plan(raw_document)` is also public when a host wants the
@@ -123,8 +150,9 @@ The terminal reports the plan verdict; the JSON file contains step receipts,
 verification results, timing, and bounded evidence. `artifacts/` is ignored by
 Git so local receipt output does not pollute a working tree.
 
-For a host integration, the planner constructs an `ExecutionPlan` using the
-typed API or JSON, then consumes the result:
+For trusted-host compatibility code (not an LLM capability), a host may still
+construct an `ExecutionPlan` using the typed API or JSON, then consume the
+result:
 
 ```python
 from dingdongditch import execute_plan
@@ -140,7 +168,13 @@ See the runnable [host API example](./examples/host_execution_plan.py) and the
 [JSON plan guide](./examples/plans/README.md). The CLI and runtime never
 author plans, reinterpret intent, or choose recovery steps.
 
-## What v0.4.1 provides
+## What v0.5.0 provides
+
+- A governed host/planner boundary with Authority Firewall, Two-Phase Commit,
+  Quorum Verification, receipt-chain checkpoints, and Cross-Agent Hot Handoff.
+- Exact Ed25519 Signed Plan Authority; portable user-owned Agent Identity;
+  bounded mutation arbitration; host or independently keyed execution
+  attestation; and signed, deterministic speculative continuations.
 
 - Deterministic browser actions, declared waits, page operations, and strict
   target cardinality across Playwright Chromium, Firefox, and WebKit.

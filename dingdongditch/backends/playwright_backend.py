@@ -2717,6 +2717,50 @@ class PlaywrightBackend:
                 )
 
             loc = resolved.playwright_locator
+            prepared_identity = getattr(operation, "_transaction_target_identity", None)
+            if prepared_identity is not None:
+                if (
+                    not isinstance(prepared_identity, tuple)
+                    or len(prepared_identity) != 2
+                    or not all(isinstance(value, str) and value for value in prepared_identity)
+                ):
+                    return ActionDispatchResult(
+                        ok=False, error="prepared target binding is invalid",
+                        started_at_ms=started, completed_at_ms=monotonic_ms(),
+                        recovery_attempts=recovery, match_count=resolved.match_count,
+                        resolution_trace=resolved.trace,
+                        failure_kind="prepared_target_identity_invalid",
+                        action_evidence={"preparation": preparation, "dispatched": False},
+                    )
+                key, expected_identity = prepared_identity
+                if action.type in (ActionType.SELECT_COMBOBOX_OPTION, ActionType.POINTER_MOVE):
+                    return ActionDispatchResult(
+                        ok=False, error="prepared action type cannot be node-bound",
+                        started_at_ms=started, completed_at_ms=monotonic_ms(),
+                        recovery_attempts=recovery, match_count=resolved.match_count,
+                        resolution_trace=resolved.trace,
+                        failure_kind="prepared_target_identity_unbindable",
+                        action_evidence={"preparation": preparation, "dispatched": False},
+                    )
+                try:
+                    bound = loc.element_handle(timeout=effective_timeout_ms)
+                    actual_identity = bound.evaluate("(element, key) => String(element[key] || '')", key) if bound is not None else ""
+                except Exception:
+                    bound = None
+                    actual_identity = ""
+                if bound is None or actual_identity != expected_identity:
+                    return ActionDispatchResult(
+                        ok=False, error="prepared target identity changed before dispatch",
+                        started_at_ms=started, completed_at_ms=monotonic_ms(),
+                        recovery_attempts=recovery, match_count=resolved.match_count,
+                        resolution_trace=resolved.trace,
+                        failure_kind="prepared_target_identity_changed",
+                        action_evidence={"preparation": preparation, "dispatched": False},
+                    )
+                # ElementHandle actions remain bound to this exact node.  If
+                # hostile page code detaches it, Playwright fails the action;
+                # it will not silently resolve the authored locator again.
+                loc = bound
             actionability = loc.evaluate(
                 """el => {
                   const r = el.getBoundingClientRect();
@@ -3523,11 +3567,20 @@ class PlaywrightBackend:
                 evidence["page_registry"] = self.list_pages()
             elif action.type == ActionType.FILL:
                 if action.secret_reference is not None:
-                    secret_receipt = self.authentication.inject(
-                        loc,
-                        action.secret_reference,
-                        timeout_ms=action.secret_timeout_ms,
-                    )
+                    binding = getattr(action, "_transaction_secret_binding", None)
+                    if binding is None:
+                        secret_receipt = self.authentication.inject(
+                            loc,
+                            action.secret_reference,
+                            timeout_ms=action.secret_timeout_ms,
+                        )
+                    else:
+                        secret_receipt = self.authentication.inject_bound(
+                            loc,
+                            action.secret_reference,
+                            binding,
+                            timeout_ms=action.secret_timeout_ms,
+                        )
                     # Deliberately neutral key: generic evidence sanitizers
                     # redact values beneath keys containing "secret".
                     evidence["ephemeral_fill"] = secret_receipt.to_dict()
@@ -4033,3 +4086,137 @@ class PlaywrightBackend:
             frame_path=frame_path,
             attribute_names=attribute_names,
         ).to_legacy_state()
+
+    def transaction_target_identity(
+        self,
+        locator: Locator,
+        *,
+        frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
+        identity_key: str,
+    ) -> str:
+        """Return a process-private identity marker for one resolved DOM node.
+
+        The marker is intentionally not an element attribute and never leaves
+        the live session.  It detects ordinary same-markup node replacement
+        between transaction prepare and commit; it is not a claim that a page
+        executing arbitrary hostile JavaScript cannot tamper with its own DOM.
+        """
+        if not isinstance(identity_key, str) or not identity_key:
+            raise ValueError("transaction target identity key is required")
+        resolved = self._resolve_scoped_target(
+            locator,
+            frame=frame,
+            frame_path=frame_path,
+            cardinality=CardinalityPolicy.EXACTLY_ONE,
+        )
+        if not resolved.ok or resolved.playwright_locator is None or resolved.match_count != 1:
+            raise RuntimeError("transaction target is not uniquely resolvable")
+        value = resolved.playwright_locator.evaluate(
+            """(element, key) => {
+                if (!Object.prototype.hasOwnProperty.call(element, key)) {
+                    const token = (globalThis.crypto && crypto.randomUUID)
+                        ? crypto.randomUUID()
+                        : `${Date.now()}-${Math.random()}-${Math.random()}`;
+                    Object.defineProperty(element, key, {
+                        value: token,
+                        enumerable: false,
+                        configurable: false,
+                        writable: false,
+                    });
+                }
+                return String(element[key]);
+            }""",
+            identity_key,
+        )
+        if not isinstance(value, str) or not value:
+            raise RuntimeError("transaction target identity was unavailable")
+        return value
+
+    def transaction_scope_state(
+        self,
+        *,
+        frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
+        state_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Capture material document state for a prepared action's scope.
+
+        When ``state_key`` is supplied, a random private marker is installed
+        in the document's JS realm.  It records DOM mutations and document
+        replacement even if the visible markup later changes back.  This is a
+        freshness signal, not a defense against page JavaScript deliberately
+        tampering with its own browser realm.
+        """
+        path = frame_path or ((frame,) if frame is not None else ())
+        root: Any = self.page
+        if path:
+            resolved = resolve_frame_path(self.page, path, backend_identity=self.backend_identity)
+            if not resolved.ok or resolved.frame is None:
+                raise RuntimeError("transaction frame scope is not uniquely resolvable")
+            root = resolved.frame
+        state = root.evaluate(
+            """key => {
+                const safeState = (() => {
+                    try { return JSON.stringify(history.state); }
+                    catch (_) { return "<unserializable>"; }
+                })();
+                let transaction = key ? globalThis[key] : null;
+                if (key && (!transaction || typeof transaction !== "object")) {
+                    const token = (globalThis.crypto && crypto.randomUUID)
+                        ? crypto.randomUUID()
+                        : `${Date.now()}-${Math.random()}-${Math.random()}`;
+                    transaction = { documentToken: token, mutationCount: 0 };
+                    const observer = new MutationObserver(() => { transaction.mutationCount += 1; });
+                    observer.observe(document, {
+                        attributes: true, childList: true, characterData: true,
+                        subtree: true,
+                    });
+                    Object.defineProperty(globalThis, key, {
+                        value: transaction, enumerable: false, configurable: false, writable: false,
+                    });
+                }
+                const controls = Array.from(document.querySelectorAll("input, textarea, select, button"))
+                    .map((element, index) => ({
+                        index,
+                        tag: element.tagName,
+                        type: element.getAttribute("type"),
+                        name: element.getAttribute("name"),
+                        value: "value" in element ? String(element.value) : null,
+                        checked: "checked" in element ? Boolean(element.checked) : null,
+                        selectedIndex: "selectedIndex" in element ? Number(element.selectedIndex) : null,
+                        formAction: "formAction" in element ? String(element.formAction || "") : null,
+                        formMethod: "formMethod" in element ? String(element.formMethod || "") : null,
+                    }));
+                return {
+                    url: location.href, readyState: document.readyState,
+                    title: document.title, root: document.documentElement.outerHTML,
+                    historyLength: history.length, historyState: safeState,
+                    controls,
+                    documentToken: transaction ? String(transaction.documentToken) : null,
+                    mutationCount: transaction ? Number(transaction.mutationCount) : null,
+                };
+            }""",
+            state_key,
+        )
+        if not isinstance(state, dict) or not isinstance(state.get("url"), str):
+            raise RuntimeError("transaction scoped browser state was unavailable")
+        return {
+            "url": state["url"],
+            "readyState": str(state.get("readyState", "")),
+            "title": str(state.get("title", "")),
+            "root": str(state.get("root", "")),
+            "history_length": state.get("historyLength"),
+            "history_state": state.get("historyState"),
+            "controls": state.get("controls"),
+            "document_token": state.get("documentToken"),
+            "mutation_count": state.get("mutationCount"),
+        }
+
+    def scoped_action_url(
+        self,
+        *,
+        frame: Locator | None = None,
+        frame_path: tuple[Locator, ...] = (),
+    ) -> str:
+        return self.transaction_scope_state(frame=frame, frame_path=frame_path)["url"]

@@ -720,6 +720,160 @@
         }
       ]
     },
+    "AuthorityEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_frame_actions": {
+          "type": "boolean"
+        },
+        "allowed_action_types": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowed_file_names": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowed_origins": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowed_secret_references": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "denied_action_types": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "denied_origins": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deny_untrusted_for_irreversible": {
+          "type": "boolean"
+        },
+        "expires_at_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "granted_authorities": {
+          "items": {
+            "enum": [
+              "user_authority",
+              "host_policy",
+              "agent_reasoning",
+              "web_untrusted",
+              "third_party_content",
+              "secret_provider",
+              "system_runtime"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "irreversible_action_types": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_action_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_side_effect_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_upload_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "policy_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "require_preparation_for": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required_authority_by_action": {
+          "additionalProperties": {
+            "enum": [
+              "user_authority",
+              "host_policy",
+              "agent_reasoning",
+              "web_untrusted",
+              "third_party_content",
+              "secret_provider",
+              "system_runtime"
+            ],
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "transfer_prepared_operations": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "policy_id",
+        "granted_authorities"
+      ],
+      "type": "object"
+    },
     "BrowserConfig": {
       "additionalProperties": false,
       "properties": {
@@ -793,6 +947,9 @@
         "adaptive_timeout_enabled": {
           "type": "boolean"
         },
+        "authority_envelope": {
+          "$ref": "#/$defs/AuthorityEnvelope"
+        },
         "failure_policy": {
           "const": "stop_on_failure"
         },
@@ -808,6 +965,7 @@
           "items": {
             "$ref": "#/$defs/Operation"
           },
+          "maxItems": 256,
           "minItems": 1,
           "type": "array"
         },
@@ -817,6 +975,13 @@
         },
         "screenshot_config": {
           "$ref": "#/$defs/ScreenshotConfig"
+        },
+        "speculative_plans": {
+          "items": {
+            "$ref": "#/$defs/SpeculativePlan"
+          },
+          "maxItems": 8,
+          "type": "array"
         }
       },
       "required": [
@@ -1191,6 +1356,9 @@
         "adaptive_timeout_enabled": {
           "type": "boolean"
         },
+        "authority_envelope": {
+          "$ref": "#/$defs/AuthorityEnvelope"
+        },
         "browser_config": {
           "additionalProperties": false,
           "properties": {
@@ -1241,6 +1409,7 @@
           "items": {
             "$ref": "#/$defs/Operation"
           },
+          "maxItems": 256,
           "minItems": 1,
           "type": "array"
         },
@@ -1250,6 +1419,13 @@
         },
         "screenshot_config": {
           "$ref": "#/$defs/ScreenshotConfig"
+        },
+        "speculative_plans": {
+          "items": {
+            "$ref": "#/$defs/SpeculativePlan"
+          },
+          "maxItems": 8,
+          "type": "array"
         }
       },
       "required": [
@@ -1940,6 +2116,22 @@
         "page_transition": {
           "$ref": "#/$defs/PageTransition"
         },
+        "provenance": {
+          "items": {
+            "enum": [
+              "user_authority",
+              "host_policy",
+              "agent_reasoning",
+              "web_untrusted",
+              "third_party_content",
+              "secret_provider",
+              "system_runtime"
+            ],
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
         "require_unique_target": {
           "const": true
         },
@@ -1965,6 +2157,9 @@
         "url": {
           "minLength": 1,
           "type": "string"
+        },
+        "verification_quorum": {
+          "$ref": "#/$defs/VerificationQuorum"
         },
         "webauthn": {
           "$ref": "#/$defs/WebAuthnParticipationRequest"
@@ -2409,6 +2604,64 @@
       ],
       "type": "object"
     },
+    "SpeculativeBranch": {
+      "additionalProperties": false,
+      "properties": {
+        "branch_id": {
+          "type": "string"
+        },
+        "continuation": {
+          "$ref": "#/$defs/Operation"
+        },
+        "preconditions": {
+          "items": {
+            "$ref": "#/$defs/Expectation"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "branch_id",
+        "preconditions",
+        "continuation"
+      ],
+      "type": "object"
+    },
+    "SpeculativePlan": {
+      "additionalProperties": false,
+      "properties": {
+        "branches": {
+          "items": {
+            "$ref": "#/$defs/SpeculativeBranch"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        },
+        "max_depth": {
+          "const": 1
+        },
+        "parent_operation": {
+          "$ref": "#/$defs/Operation"
+        },
+        "parent_operation_id": {
+          "type": "string"
+        },
+        "speculation_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "speculation_id",
+        "parent_operation_id",
+        "parent_operation",
+        "max_depth",
+        "branches"
+      ],
+      "type": "object"
+    },
     "TargetConstraint": {
       "oneOf": [
         {
@@ -2549,6 +2802,105 @@
           "type": "object"
         }
       ]
+    },
+    "VerificationCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_source": {
+          "enum": [
+            "dom_state",
+            "accessibility_state",
+            "network",
+            "page_state",
+            "file_state",
+            "visual",
+            "host_callback"
+          ],
+          "type": "string"
+        },
+        "expectation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "verifier_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "verifier_id",
+        "expectation_id",
+        "evidence_source"
+      ],
+      "type": "object"
+    },
+    "VerificationQuorum": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "policy": {
+                "const": "n_of_m"
+              }
+            },
+            "required": [
+              "policy"
+            ]
+          },
+          "then": {
+            "required": [
+              "required"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "policy": {
+                "const": "all"
+              }
+            },
+            "required": [
+              "policy"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "required"
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/VerificationCheck"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "policy": {
+          "enum": [
+            "all",
+            "n_of_m"
+          ],
+          "type": "string"
+        },
+        "required": {
+          "maximum": 16,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "policy",
+        "checks"
+      ],
+      "type": "object"
     },
     "ViewportPointerRequest": {
       "additionalProperties": false,

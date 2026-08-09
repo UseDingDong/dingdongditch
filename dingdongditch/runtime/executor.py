@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import hashlib
 from dataclasses import replace
 from pathlib import Path
@@ -17,6 +19,7 @@ from dingdongditch.contract.operation import ActionType, Operation
 from dingdongditch.contract.page_precondition import PageConditionResultValue
 from dingdongditch.contract.receipt import RECEIPT_SCHEMA_VERSION, ExecutionReceipt
 from dingdongditch.contract.verdict import Verdict
+from dingdongditch.contract.quorum import evaluate_quorum
 from dingdongditch.contract.download import TrustedDownloadConfig
 from dingdongditch.authentication import AuthenticationCapability
 from dingdongditch.evidence.collector import EvidenceCollector
@@ -1044,6 +1047,20 @@ def _execute_operation(
                     "condition was not proven"
                 )
 
+        quorum_verification = None
+        if action_ok and operation.verification_quorum is not None:
+            quorum = evaluate_quorum(operation.verification_quorum, expectation_results)
+            quorum_verification = quorum.to_dict()
+            verdict = quorum.verdict
+            if verdict is Verdict.NOT_VERIFIED:
+                failure_kind = "verification_quorum_not_met"
+                execution_status = "verification_quorum_not_met"
+                execution_error = quorum.reason
+            elif verdict is Verdict.INDETERMINATE:
+                failure_kind = "verification_quorum_indeterminate"
+                execution_status = "verification_quorum_indeterminate"
+                execution_error = quorum.reason
+
         finished = monotonic_ms()
         receipt = ExecutionReceipt(
             schema_version=RECEIPT_SCHEMA_VERSION,
@@ -1075,6 +1092,7 @@ def _execute_operation(
             browser=backend.browser_environment(),
             failure_kind=failure_kind,
             action_evidence=action_evidence,
+            quorum_verification=quorum_verification,
             page_transition=(
                 operation.page_transition.describe()
                 if operation.page_transition is not None
@@ -1176,6 +1194,11 @@ def execute_operation(
     authentication: AuthenticationCapability | None = None,
     observation_reference: Any | None = None,
 ) -> ExecutionReceipt:
+    warnings.warn(
+        "execute_operation is a trusted-host compatibility API; expose GovernedAgentSession or GovernedAgentService to external planners",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if backend is None:
         return _execute_operation(
             operation,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 from dingdongditch import __version__
 from dingdongditch.backends.playwright_backend import PlaywrightBackend, monotonic_ms
 from dingdongditch.contract.browser import BrowserConfigError
@@ -359,6 +361,11 @@ def execute_plan(
     trusted_download_config: TrustedDownloadConfig | None = None,
     authentication: AuthenticationCapability | None = None,
 ) -> PlanReceipt:
+    warnings.warn(
+        "execute_plan is a trusted-host compatibility API; expose GovernedAgentSession or GovernedAgentService to external planners",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if backend is None:
         return _execute_plan(
             plan, backend=None, trusted_download_config=trusted_download_config,

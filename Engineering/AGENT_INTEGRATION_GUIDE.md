@@ -40,13 +40,22 @@ tool = dingdong.execution_plan_tool()
 raw_document = my_agent_or_planner(schema=schema, tool=tool)
 
 document = dingdong.parse_plan_document(raw_document)
-receipt = dingdong.execute_plan(document.plan)
+policy = dingdong.AuthorityEnvelope(
+    policy_id="host-policy",
+    granted_authorities=(dingdong.ProvenanceClass.HOST_POLICY,),
+    allowed_origins=("https://example.com",),
+    allowed_action_types=("navigate",),
+)
+host = dingdong.TrustedHostRuntime()  # host-only: policy, lifecycle, secrets
+agent = host.open_governed_agent_session(authority_envelope=policy, agent_id="planner-a")
+result = agent.execute(document.plan.operations[0])
 
 # A host can validate/decode the structured result without inspecting keys.
-plan_receipt = dingdong.parse_plan_receipt(receipt.to_dict())
+receipt = dingdong.parse_execution_receipt(result.receipt.to_dict())
 ```
 
-When the host only needs an `ExecutionPlan`, use the equally public shortcut:
+`parse_execution_plan()` remains a compatibility parser for trusted host code.
+Do not give raw `execute_plan()` / `execute_operation()` to a planner:
 
 ```python
 plan = dingdong.parse_execution_plan(raw_document)
@@ -80,7 +89,7 @@ observation schema.
 | Receipt decoding | `parse_execution_receipt()`, `parse_plan_receipt()`, `parse_receipt()` |
 | Safe static errors | `ContractValidationError` with `ValidationIssue` values and `to_dict()` |
 
-All emitted plans must still be parsed before execution. JSON Schema constrains
+All emitted plans must still be parsed before governed execution. JSON Schema constrains
 the declared grammar; live browser facts such as target uniqueness, frame
 existence, page freshness, filesystem authorization, and actual expectation
 results are runtime validation boundaries.
@@ -131,7 +140,7 @@ authoritative.
 There is intentionally no branded adapter when it would only duplicate the
 generic path. For each of the following, obtain `execution_schema()` and/or
 `execution_plan_tool()`, have the host emit the canonical `PlanDocument`, then
-call `parse_plan_document()` before `execute_plan()`:
+call `parse_plan_document()` before passing an operation to a governed session:
 
 - xAI Grok and DeepSeek;
 - Meta Llama, Qwen, and Mistral;
@@ -150,8 +159,8 @@ and pass the resulting JSON through `parse_plan_document()`.
 ## Receipt and observation consumption
 
 `ExecutionReceipt.to_dict()` validates against the public ExecutionReceipt
-schema (1.8.0). `execute_plan()` returns a `PlanReceipt` whose `to_dict()`
-validates against the public PlanReceipt schema (2.2.0). `PageObservation`
+schema (1.8.0). Trusted-host `execute_plan()` returns a `PlanReceipt` whose
+`to_dict()` validates against the public PlanReceipt schema (2.2.0). `PageObservation`
 serialization validates against `observation_schema()`.
 
 Use `parse_receipt()` when receiving serialized output of an unknown receipt
@@ -164,4 +173,7 @@ The host owns model reasoning, consent, retries, recovery strategy, and model
 credentials. DingDongDitch owns only deterministic plan validation, browser
 execution, verification, observations, and receipts. It never executes
 unvalidated model output and does not add API-key storage, autonomous planning,
-or vendor-specific runtime behavior.
+or vendor-specific runtime behavior. The host alone owns `AuthorityEnvelope`,
+secret providers, raw runtime access, browser lifecycle, checkpoint retention,
+and authenticated cross-process handoff. External planners receive only a
+`GovernedAgentSession`/authenticated `GovernedAgentService` lease.

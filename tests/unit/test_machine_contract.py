@@ -46,6 +46,15 @@ def test_every_public_schema_is_valid_draft_2020_12_and_matches_resource():
             "observation": dingdong.observation_schema,
             "execution-receipt": dingdong.execution_receipt_schema,
             "plan-receipt": dingdong.plan_receipt_schema,
+            "prepared-operation": dingdong.prepared_operation_schema,
+                "agent-handoff-checkpoint": dingdong.agent_handoff_checkpoint_schema,
+                "agent-handoff": dingdong.agent_handoff_schema,
+                "signed-plan-authority": dingdong.signed_plan_authority_schema,
+                "agent-identity": dingdong.agent_identity_schema,
+                "identity-assertion": dingdong.identity_assertion_schema,
+                "mutation-evidence": dingdong.mutation_evidence_schema,
+                "execution-attestation": dingdong.execution_attestation_schema,
+                "speculative-plan": dingdong.speculative_plan_schema,
         }[name]()
         Draft202012Validator.check_schema(generated)
         assert dingdong.published_schema_resource(name) == generated

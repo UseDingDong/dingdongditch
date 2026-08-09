@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Iterable, Mapping
 
+from dingdongditch.contract.authority import ProvenanceClass, merge_provenance
+
 
 def _thaw(value: Any) -> Any:
     if isinstance(value, Mapping):
@@ -192,6 +194,12 @@ class ObservationReference:
     observation_id: str
     element_id: str
     expected: dict[str, Any] = field(default_factory=dict)
+    control_epoch: int | None = None
+    mutation_epoch: int | None = None
+    # Browser/page-derived observations are untrusted input by default.  A
+    # reference retains this label when used by a governed session so a
+    # planner cannot make it disappear merely by reformatting target data.
+    provenance: tuple[ProvenanceClass, ...] = (ProvenanceClass.WEB_UNTRUSTED,)
 
 
 @dataclass(frozen=True)
@@ -229,6 +237,7 @@ class PageObservation:
     snapshot_id: str = ""
     commit_id: str = ""
     observation_hash: str = ""
+    provenance: tuple[ProvenanceClass, ...] = (ProvenanceClass.WEB_UNTRUSTED,)
 
     def __post_init__(self) -> None:
         for name in (
@@ -237,6 +246,15 @@ class PageObservation:
             "scroll_context", "freshness", "diagnostics",
         ):
             object.__setattr__(self, name, freeze(getattr(self, name)))
+        declared = self.provenance or (ProvenanceClass.WEB_UNTRUSTED,)
+        try:
+            normalized = tuple(
+                value if isinstance(value, ProvenanceClass) else ProvenanceClass(value)
+                for value in declared
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("observation provenance is invalid") from exc
+        object.__setattr__(self, "provenance", merge_provenance(normalized))
 
     def to_dict(self) -> dict[str, Any]:
         return _thaw(self.__dict__)

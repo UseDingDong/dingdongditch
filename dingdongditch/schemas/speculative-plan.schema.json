@@ -1,0 +1,3440 @@
+{
+  "$defs": {
+    "Action": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "navigate"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "click"
+            }
+          },
+          "required": [
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "hover"
+            }
+          },
+          "required": [
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "scroll_to_target"
+            }
+          },
+          "required": [
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "oneOf": [
+            {
+              "not": {
+                "required": [
+                  "secret_reference"
+                ]
+              },
+              "required": [
+                "text"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "text"
+                ]
+              },
+              "required": [
+                "secret_reference"
+              ]
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "secret_reference": {
+              "$ref": "#/$defs/SecretReference"
+            },
+            "secret_timeout_ms": {
+              "maximum": 60000,
+              "minimum": 10,
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "fill"
+            }
+          },
+          "required": [
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        },
+        {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "not": {
+                    "required": [
+                      "frame",
+                      "frame_path"
+                    ]
+                  }
+                }
+              ],
+              "properties": {
+                "frame": {
+                  "$ref": "#/$defs/Locator"
+                },
+                "frame_path": {
+                  "items": {
+                    "$ref": "#/$defs/Locator"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "key": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "key_scope": {
+                  "const": "target"
+                },
+                "locator": {
+                  "$ref": "#/$defs/Locator"
+                },
+                "type": {
+                  "const": "press_key"
+                }
+              },
+              "required": [
+                "type",
+                "key",
+                "key_scope",
+                "locator"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "not": {
+                    "required": [
+                      "frame",
+                      "frame_path"
+                    ]
+                  }
+                }
+              ],
+              "not": {
+                "required": [
+                  "key_scope"
+                ]
+              },
+              "properties": {
+                "frame": {
+                  "$ref": "#/$defs/Locator"
+                },
+                "frame_path": {
+                  "items": {
+                    "$ref": "#/$defs/Locator"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "key": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "locator": {
+                  "$ref": "#/$defs/Locator"
+                },
+                "type": {
+                  "const": "press_key"
+                }
+              },
+              "required": [
+                "type",
+                "key",
+                "locator"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "key_scope": {
+                  "const": "active_page"
+                },
+                "type": {
+                  "const": "press_key"
+                }
+              },
+              "required": [
+                "type",
+                "key",
+                "key_scope"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "option_value": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "select_option"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "option_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "option_label": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "select_option"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "option_label"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "option_values": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "type": {
+              "const": "select_option"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "option_values"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "checked": {
+              "type": "boolean"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "set_checked"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "checked"
+          ],
+          "type": "object"
+        },
+        {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "pointer_request": {
+                  "$ref": "#/$defs/ViewportPointerRequest"
+                },
+                "type": {
+                  "const": "pointer_move"
+                }
+              },
+              "required": [
+                "type",
+                "pointer_request"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "not": {
+                    "required": [
+                      "frame",
+                      "frame_path"
+                    ]
+                  }
+                }
+              ],
+              "properties": {
+                "frame": {
+                  "$ref": "#/$defs/Locator"
+                },
+                "frame_path": {
+                  "items": {
+                    "$ref": "#/$defs/Locator"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "locator": {
+                  "$ref": "#/$defs/Locator"
+                },
+                "pointer_request": {
+                  "$ref": "#/$defs/ElementPointerRequest"
+                },
+                "type": {
+                  "const": "pointer_move"
+                }
+              },
+              "required": [
+                "type",
+                "pointer_request",
+                "locator"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "wait_for"
+            },
+            "wait_condition": {
+              "$ref": "#/$defs/WaitCondition"
+            },
+            "wait_timeout_ms": {
+              "maximum": 60000,
+              "minimum": 100,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "wait_condition"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "page_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "switch_to_page",
+                "close_page"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "page_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "switch_to_opener"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "download_request": {
+              "$ref": "#/$defs/DownloadRequest"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "download"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "download_request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "anyOf": [
+            {
+              "required": [
+                "allowed_files"
+              ]
+            },
+            {
+              "required": [
+                "allowed_roots"
+              ]
+            }
+          ],
+          "properties": {
+            "allowed_files": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "allowed_roots": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "file_paths": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "upload_file"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "file_paths"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "combobox": {
+              "$ref": "#/$defs/ComboboxSelection"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "select_combobox_option"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "combobox"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AuthorityEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_frame_actions": {
+          "type": "boolean"
+        },
+        "allowed_action_types": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowed_file_names": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowed_origins": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowed_secret_references": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "denied_action_types": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "denied_origins": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "deny_untrusted_for_irreversible": {
+          "type": "boolean"
+        },
+        "expires_at_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "granted_authorities": {
+          "items": {
+            "enum": [
+              "user_authority",
+              "host_policy",
+              "agent_reasoning",
+              "web_untrusted",
+              "third_party_content",
+              "secret_provider",
+              "system_runtime"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "irreversible_action_types": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_action_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_side_effect_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_upload_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "policy_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "require_preparation_for": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required_authority_by_action": {
+          "additionalProperties": {
+            "enum": [
+              "user_authority",
+              "host_policy",
+              "agent_reasoning",
+              "web_untrusted",
+              "third_party_content",
+              "secret_provider",
+              "system_runtime"
+            ],
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "transfer_prepared_operations": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "policy_id",
+        "granted_authorities"
+      ],
+      "type": "object"
+    },
+    "BrowserConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "const": "bundled"
+        },
+        "download_policy": {
+          "$ref": "#/$defs/DownloadPolicy"
+        },
+        "engine": {
+          "enum": [
+            "chromium",
+            "firefox",
+            "webkit"
+          ],
+          "type": "string"
+        },
+        "headless": {
+          "type": "boolean"
+        },
+        "profile": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "playwright"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CanonicalExecutionPlan": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "adaptive_timeout_enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "adaptive_timeout_enabled"
+            ]
+          },
+          "then": {
+            "required": [
+              "initial_plan_timeout_ms",
+              "max_plan_timeout_ms"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "max_plan_timeout_ms"
+            ]
+          },
+          "then": {
+            "required": [
+              "initial_plan_timeout_ms"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "adaptive_timeout_enabled": {
+          "type": "boolean"
+        },
+        "authority_envelope": {
+          "$ref": "#/$defs/AuthorityEnvelope"
+        },
+        "failure_policy": {
+          "const": "stop_on_failure"
+        },
+        "initial_plan_timeout_ms": {
+          "minimum": 100,
+          "type": "integer"
+        },
+        "max_plan_timeout_ms": {
+          "minimum": 100,
+          "type": "integer"
+        },
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/Operation"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "plan_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "screenshot_config": {
+          "$ref": "#/$defs/ScreenshotConfig"
+        },
+        "speculative_plans": {
+          "items": {
+            "$ref": "#/$defs/SpeculativePlan"
+          },
+          "maxItems": 8,
+          "type": "array"
+        }
+      },
+      "required": [
+        "plan_id",
+        "operations"
+      ],
+      "type": "object"
+    },
+    "ComboboxSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "clear_existing": {
+          "type": "boolean"
+        },
+        "dropdown_timeout_ms": {
+          "maximum": 30000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "expected_option": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "match": {
+          "enum": [
+            "contains",
+            "exact"
+          ],
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "expected_option"
+      ],
+      "type": "object"
+    },
+    "DesktopRedactionRegion": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "region_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "width": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "x": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "y": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "region_id",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "DialogContract": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "requirement": {
+                "not": {
+                  "const": "forbidden"
+                }
+              }
+            },
+            "required": [
+              "requirement"
+            ]
+          },
+          "then": {
+            "required": [
+              "dialog_type"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "message_contains": {
+                "const": true
+              }
+            },
+            "required": [
+              "message_contains"
+            ]
+          },
+          "then": {
+            "required": [
+              "message"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "prompt_text"
+            ]
+          },
+          "then": {
+            "properties": {
+              "dialog_type": {
+                "const": "prompt"
+              }
+            },
+            "required": [
+              "dialog_type"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "accept"
+              },
+              "dialog_type": {
+                "const": "prompt"
+              }
+            },
+            "required": [
+              "dialog_type",
+              "action"
+            ]
+          },
+          "then": {
+            "required": [
+              "prompt_text"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "accept",
+            "dismiss"
+          ],
+          "type": "string"
+        },
+        "dialog_type": {
+          "enum": [
+            "alert",
+            "confirm",
+            "prompt",
+            "beforeunload"
+          ],
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "message_contains": {
+          "type": "boolean"
+        },
+        "prompt_text": {
+          "type": "string"
+        },
+        "redact_prompt_text": {
+          "type": "boolean"
+        },
+        "requirement": {
+          "enum": [
+            "required",
+            "optional",
+            "forbidden"
+          ],
+          "type": "string"
+        },
+        "timeout_ms": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "DownloadPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_extension_derived_mime": {
+          "type": "boolean"
+        },
+        "allow_unknown_mime": {
+          "type": "boolean"
+        },
+        "max_filename_length": {
+          "minimum": 32,
+          "type": "integer"
+        },
+        "max_subdirectory_depth": {
+          "maximum": 32,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "DownloadRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_extensions": {
+          "items": {
+            "pattern": "^\\.[A-Za-z0-9]{1,20}$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowed_mime_types": {
+          "items": {
+            "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "checksum_policy": {
+          "enum": [
+            "sha256",
+            "none"
+          ],
+          "type": "string"
+        },
+        "collision_policy": {
+          "enum": [
+            "uniquify",
+            "reject",
+            "replace"
+          ],
+          "type": "string"
+        },
+        "correlation_window_ms": {
+          "minimum": 50,
+          "type": "integer"
+        },
+        "destination_subdirectory": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_download_events": {
+          "const": 1
+        },
+        "late_event_guard_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maximum_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minimum_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "page_effect_policy": {
+          "enum": [
+            "no_new_page",
+            "allow_transient_page",
+            "allow_one_persistent_page",
+            "any_declared_page_effect"
+          ],
+          "type": "string"
+        },
+        "preferred_filename": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "trigger_action": {
+          "enum": [
+            "click",
+            "press_key"
+          ],
+          "type": "string"
+        },
+        "trigger_key": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ElementPointerRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": [
+            "element_center",
+            "element_offset"
+          ]
+        },
+        "steps": {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "verify_position": {
+          "type": "boolean"
+        },
+        "x": {
+          "maximum": 1000000,
+          "minimum": -1000000,
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1000000,
+          "minimum": -1000000,
+          "type": "number"
+        }
+      },
+      "required": [
+        "origin"
+      ],
+      "type": "object"
+    },
+    "ExecutionPlan": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "adaptive_timeout_enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "adaptive_timeout_enabled"
+            ]
+          },
+          "then": {
+            "required": [
+              "initial_plan_timeout_ms",
+              "max_plan_timeout_ms"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "max_plan_timeout_ms"
+            ]
+          },
+          "then": {
+            "required": [
+              "initial_plan_timeout_ms"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "adaptive_timeout_enabled": {
+          "type": "boolean"
+        },
+        "authority_envelope": {
+          "$ref": "#/$defs/AuthorityEnvelope"
+        },
+        "browser_config": {
+          "additionalProperties": false,
+          "properties": {
+            "channel": {
+              "const": "bundled"
+            },
+            "download_policy": {
+              "$ref": "#/$defs/DownloadPolicy"
+            },
+            "engine": {
+              "enum": [
+                "chromium",
+                "firefox",
+                "webkit"
+              ],
+              "type": "string"
+            },
+            "headless": {
+              "type": "boolean"
+            },
+            "profile": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+              "type": "string"
+            },
+            "provider": {
+              "enum": [
+                "playwright"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "failure_policy": {
+          "const": "stop_on_failure"
+        },
+        "initial_plan_timeout_ms": {
+          "minimum": 100,
+          "type": "integer"
+        },
+        "max_plan_timeout_ms": {
+          "minimum": 100,
+          "type": "integer"
+        },
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/Operation"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "plan_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "screenshot_config": {
+          "$ref": "#/$defs/ScreenshotConfig"
+        },
+        "speculative_plans": {
+          "items": {
+            "$ref": "#/$defs/SpeculativePlan"
+          },
+          "maxItems": 8,
+          "type": "array"
+        }
+      },
+      "required": [
+        "plan_id",
+        "operations"
+      ],
+      "type": "object"
+    },
+    "Expectation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "expectation_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "url"
+            },
+            "url_match": {
+              "enum": [
+                "exact",
+                "contains"
+              ],
+              "type": "string"
+            },
+            "url_value": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "expectation_id": {
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "element_exists"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "exists"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "expectation_id": {
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "element_visible"
+            },
+            "visible": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "visible"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "expectation_id": {
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "in_viewport": {
+              "type": "boolean"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "element_in_viewport"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "in_viewport"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "expectation_id": {
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "text_match": {
+              "enum": [
+                "contains",
+                "exact"
+              ],
+              "type": "string"
+            },
+            "text_value": {
+              "type": "string"
+            },
+            "type": {
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "text_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "attribute_name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "attribute_value": {
+              "type": "string"
+            },
+            "expectation_id": {
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "attribute"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "attribute_name",
+            "attribute_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "expectation_id": {
+              "type": "string"
+            },
+            "network_max_elapsed_ms": {
+              "maximum": 300000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "network_method": {
+              "pattern": "^[A-Z]+$",
+              "type": "string"
+            },
+            "network_request_observed": {
+              "type": "boolean"
+            },
+            "network_response_observed": {
+              "type": "boolean"
+            },
+            "network_status": {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "network_url_match": {
+              "enum": [
+                "contains",
+                "exact",
+                "path_exact",
+                "path_contains"
+              ],
+              "type": "string"
+            },
+            "network_url_substring": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "network"
+            }
+          },
+          "required": [
+            "type",
+            "network_url_substring"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "expectation_id": {
+              "type": "string"
+            },
+            "file_names": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "upload_file_names"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "file_names"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "expectation_id": {
+              "type": "string"
+            },
+            "file_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "upload_file_count"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "file_count"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "GuardBranch": {
+      "additionalProperties": false,
+      "properties": {
+        "branch_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "execute": {
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "when": {
+          "additionalProperties": false,
+          "properties": {
+            "expectations": {
+              "items": {
+                "$ref": "#/$defs/Expectation"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "expectations"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "branch_id",
+        "when"
+      ],
+      "type": "object"
+    },
+    "Locator": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "constraints": {
+              "items": {
+                "$ref": "#/$defs/TargetConstraint"
+              },
+              "type": "array"
+            },
+            "name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "name_match": {
+              "enum": [
+                "exact",
+                "contains",
+                "regex"
+              ],
+              "type": "string"
+            },
+            "role": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "strategy": {
+              "const": "role_name"
+            }
+          },
+          "required": [
+            "strategy",
+            "role",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "constraints": {
+              "items": {
+                "$ref": "#/$defs/TargetConstraint"
+              },
+              "type": "array"
+            },
+            "strategy": {
+              "const": "test_id"
+            },
+            "value": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "strategy",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "constraints": {
+              "items": {
+                "$ref": "#/$defs/TargetConstraint"
+              },
+              "type": "array"
+            },
+            "strategy": {
+              "const": "placeholder"
+            },
+            "value": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "strategy",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "constraints": {
+              "items": {
+                "$ref": "#/$defs/TargetConstraint"
+              },
+              "type": "array"
+            },
+            "strategy": {
+              "const": "exact_text"
+            },
+            "value": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "strategy",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "constraints": {
+              "items": {
+                "$ref": "#/$defs/TargetConstraint"
+              },
+              "type": "array"
+            },
+            "strategy": {
+              "const": "css"
+            },
+            "value": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "strategy",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "NetworkArtifactRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "sanitized_trace"
+          ],
+          "type": "string"
+        },
+        "max_records": {
+          "maximum": 128,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "NewPageExpectation": {
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "url_value"
+          ]
+        },
+        {
+          "required": [
+            "title_value"
+          ]
+        },
+        {
+          "required": [
+            "visible_locator"
+          ]
+        }
+      ],
+      "properties": {
+        "title_match": {
+          "enum": [
+            "contains",
+            "exact"
+          ],
+          "type": "string"
+        },
+        "title_value": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "url_match": {
+          "enum": [
+            "exact",
+            "contains"
+          ],
+          "type": "string"
+        },
+        "url_value": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "visible_locator": {
+          "$ref": "#/$defs/Locator"
+        }
+      },
+      "type": "object"
+    },
+    "Operation": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/Action"
+        },
+        "cardinality": {
+          "const": "exactly_one"
+        },
+        "dialog_contract": {
+          "$ref": "#/$defs/DialogContract"
+        },
+        "expectations": {
+          "items": {
+            "$ref": "#/$defs/Expectation"
+          },
+          "type": "array"
+        },
+        "freshness": {
+          "additionalProperties": false,
+          "properties": {
+            "max_age_ms": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "guard": {
+          "$ref": "#/$defs/OperationGuard"
+        },
+        "locate_retry_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "network_artifact": {
+          "$ref": "#/$defs/NetworkArtifactRequest"
+        },
+        "operation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "page_precondition": {
+          "$ref": "#/$defs/PagePrecondition"
+        },
+        "page_transition": {
+          "$ref": "#/$defs/PageTransition"
+        },
+        "provenance": {
+          "items": {
+            "enum": [
+              "user_authority",
+              "host_policy",
+              "agent_reasoning",
+              "web_untrusted",
+              "third_party_content",
+              "secret_provider",
+              "system_runtime"
+            ],
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "require_unique_target": {
+          "const": true
+        },
+        "screenshot_config": {
+          "$ref": "#/$defs/ScreenshotConfig"
+        },
+        "target_preparation": {
+          "additionalProperties": false,
+          "properties": {
+            "dismiss_overlay_locators": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "timeout_ms": {
+          "minimum": 100,
+          "type": "integer"
+        },
+        "url": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "verification_quorum": {
+          "$ref": "#/$defs/VerificationQuorum"
+        },
+        "webauthn": {
+          "$ref": "#/$defs/WebAuthnParticipationRequest"
+        }
+      },
+      "required": [
+        "operation_id",
+        "url",
+        "action"
+      ],
+      "type": "object"
+    },
+    "OperationGuard": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "when_target_absent": {
+              "additionalProperties": false,
+              "properties": {
+                "expectations": {
+                  "items": {
+                    "$ref": "#/$defs/Expectation"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "expectations"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "when_target_absent"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "branches": {
+              "items": {
+                "$ref": "#/$defs/GuardBranch"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "type": "array"
+            },
+            "otherwise": {
+              "items": {
+                "$ref": "#/$defs/Action"
+              },
+              "maxItems": 8,
+              "type": "array"
+            }
+          },
+          "required": [
+            "branches"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PageCondition": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "condition_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "fragment_policy": {
+              "enum": [
+                "ignore",
+                "include"
+              ],
+              "type": "string"
+            },
+            "type": {
+              "const": "exact_url"
+            },
+            "url_value": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "condition_id",
+            "type",
+            "url_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "condition_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "origin_value": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "origin_equals"
+            }
+          },
+          "required": [
+            "condition_id",
+            "type",
+            "origin_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "condition_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "path_value": {
+              "pattern": "^/",
+              "type": "string"
+            },
+            "type": {
+              "const": "path_equals"
+            }
+          },
+          "required": [
+            "condition_id",
+            "type",
+            "path_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "condition_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "path_value": {
+              "pattern": "^/",
+              "type": "string"
+            },
+            "type": {
+              "const": "path_starts_with"
+            }
+          },
+          "required": [
+            "condition_id",
+            "type",
+            "path_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "condition_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "query_name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "query_value": {
+              "type": "string"
+            },
+            "type": {
+              "const": "query_param_equals"
+            }
+          },
+          "required": [
+            "condition_id",
+            "type",
+            "query_name",
+            "query_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "condition_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "element_visible"
+            }
+          },
+          "required": [
+            "condition_id",
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PagePrecondition": {
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/PageCondition"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "logic": {
+          "const": "all"
+        }
+      },
+      "required": [
+        "conditions"
+      ],
+      "type": "object"
+    },
+    "PageTransition": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "policy": {
+                "enum": [
+                  "expect_new_page_and_switch",
+                  "expect_new_page_keep_current"
+                ]
+              }
+            },
+            "required": [
+              "policy"
+            ]
+          },
+          "then": {
+            "properties": {
+              "new_page_expectations": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "new_page_expectations"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "activate_new_page_when_allowed": {
+                "const": true
+              }
+            },
+            "required": [
+              "activate_new_page_when_allowed"
+            ]
+          },
+          "then": {
+            "properties": {
+              "policy": {
+                "const": "allow_same_or_new_page"
+              }
+            },
+            "required": [
+              "policy"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "activate_new_page_when_allowed": {
+          "type": "boolean"
+        },
+        "new_page_expectations": {
+          "items": {
+            "$ref": "#/$defs/NewPageExpectation"
+          },
+          "type": "array"
+        },
+        "policy": {
+          "enum": [
+            "same_page",
+            "expect_new_page_and_switch",
+            "expect_new_page_keep_current",
+            "allow_same_or_new_page"
+          ],
+          "type": "string"
+        },
+        "timeout_ms": {
+          "minimum": 100,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ScreenshotConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mandatory_redaction": {
+                "const": true
+              }
+            },
+            "required": [
+              "mandatory_redaction"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "redact_password_inputs": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "redact_password_inputs"
+                ]
+              },
+              {
+                "properties": {
+                  "sensitive_selectors": {
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "sensitive_selectors"
+                ]
+              },
+              {
+                "properties": {
+                  "desktop_redaction_regions": {
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "desktop_redaction_regions"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "artifact_root": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "capture_timeout_ms": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "desktop_redaction_regions": {
+          "items": {
+            "$ref": "#/$defs/DesktopRedactionRegion"
+          },
+          "type": "array"
+        },
+        "full_page": {
+          "type": "boolean"
+        },
+        "mandatory_redaction": {
+          "type": "boolean"
+        },
+        "max_per_operation": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_per_plan": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "policy": {
+          "enum": [
+            "never",
+            "on_failure",
+            "before_and_after",
+            "after_success",
+            "always"
+          ],
+          "type": "string"
+        },
+        "redact_password_inputs": {
+          "type": "boolean"
+        },
+        "sensitive_selectors": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "SecretReference": {
+      "additionalProperties": false,
+      "properties": {
+        "reference_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference_id"
+      ],
+      "type": "object"
+    },
+    "SpeculativeBranch": {
+      "additionalProperties": false,
+      "properties": {
+        "branch_id": {
+          "type": "string"
+        },
+        "continuation": {
+          "$ref": "#/$defs/Operation"
+        },
+        "preconditions": {
+          "items": {
+            "$ref": "#/$defs/Expectation"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "branch_id",
+        "preconditions",
+        "continuation"
+      ],
+      "type": "object"
+    },
+    "SpeculativePlan": {
+      "additionalProperties": false,
+      "properties": {
+        "branches": {
+          "items": {
+            "$ref": "#/$defs/SpeculativeBranch"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        },
+        "max_depth": {
+          "const": 1
+        },
+        "parent_operation": {
+          "$ref": "#/$defs/Operation"
+        },
+        "parent_operation_id": {
+          "type": "string"
+        },
+        "speculation_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "speculation_id",
+        "parent_operation_id",
+        "parent_operation",
+        "max_depth",
+        "branches"
+      ],
+      "type": "object"
+    },
+    "TargetConstraint": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "within"
+            },
+            "within": {
+              "$ref": "#/$defs/Locator"
+            }
+          },
+          "required": [
+            "type",
+            "within"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "attribute_name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "attribute_operator": {
+              "enum": [
+                "equals",
+                "exists",
+                "not_equals"
+              ],
+              "type": "string"
+            },
+            "attribute_value": {
+              "type": "string"
+            },
+            "type": {
+              "const": "attribute"
+            }
+          },
+          "required": [
+            "type",
+            "attribute_name",
+            "attribute_operator"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "visible"
+            },
+            "visible": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "visible"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "type": {
+              "const": "enabled"
+            }
+          },
+          "required": [
+            "type",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "required": [
+                "exclude_names_exact"
+              ]
+            },
+            {
+              "required": [
+                "exclude_names_contains"
+              ]
+            },
+            {
+              "required": [
+                "exclude_css"
+              ]
+            },
+            {
+              "required": [
+                "exclude_attribute_name",
+                "exclude_attribute_value"
+              ]
+            }
+          ],
+          "properties": {
+            "exclude_attribute_name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "exclude_attribute_value": {
+              "type": "string"
+            },
+            "exclude_css": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "exclude_names_contains": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "exclude_names_exact": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "exclude"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "VerificationCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_source": {
+          "enum": [
+            "dom_state",
+            "accessibility_state",
+            "network",
+            "page_state",
+            "file_state",
+            "visual",
+            "host_callback"
+          ],
+          "type": "string"
+        },
+        "expectation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "verifier_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "verifier_id",
+        "expectation_id",
+        "evidence_source"
+      ],
+      "type": "object"
+    },
+    "VerificationQuorum": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "policy": {
+                "const": "n_of_m"
+              }
+            },
+            "required": [
+              "policy"
+            ]
+          },
+          "then": {
+            "required": [
+              "required"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "policy": {
+                "const": "all"
+              }
+            },
+            "required": [
+              "policy"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "required"
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/VerificationCheck"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "policy": {
+          "enum": [
+            "all",
+            "n_of_m"
+          ],
+          "type": "string"
+        },
+        "required": {
+          "maximum": 16,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "policy",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "ViewportPointerRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "const": "viewport"
+        },
+        "steps": {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "verify_position": {
+          "type": "boolean"
+        },
+        "x": {
+          "maximum": 1000000,
+          "minimum": -1000000,
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1000000,
+          "minimum": -1000000,
+          "type": "number"
+        }
+      },
+      "required": [
+        "origin",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "WaitCondition": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "element_visible"
+            }
+          },
+          "required": [
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "element_hidden"
+            }
+          },
+          "required": [
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "video_ended"
+            }
+          },
+          "required": [
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "video_playing"
+            }
+          },
+          "required": [
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "video_completed_once"
+            }
+          },
+          "required": [
+            "type",
+            "locator"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "text_match": {
+              "enum": [
+                "contains",
+                "exact"
+              ],
+              "type": "string"
+            },
+            "text_value": {
+              "type": "string"
+            },
+            "type": {
+              "const": "text_present"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "text_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "url_matches"
+            },
+            "url_match": {
+              "enum": [
+                "exact",
+                "contains"
+              ],
+              "type": "string"
+            },
+            "url_value": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "attribute_name": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "attribute_value": {
+              "type": "string"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "attribute_equals"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "attribute_name",
+            "attribute_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "value_equals"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "checked": {
+              "type": "boolean"
+            },
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "checked_equals"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "checked"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "selected_value": {
+              "type": "string"
+            },
+            "type": {
+              "const": "selected_value_equals"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "selected_value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "frame",
+                  "frame_path"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/Locator"
+            },
+            "frame_path": {
+              "items": {
+                "$ref": "#/$defs/Locator"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "in_viewport": {
+              "type": "boolean"
+            },
+            "locator": {
+              "$ref": "#/$defs/Locator"
+            },
+            "type": {
+              "const": "element_in_viewport"
+            }
+          },
+          "required": [
+            "type",
+            "locator",
+            "in_viewport"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "load_state": {
+              "enum": [
+                "domcontentloaded",
+                "load"
+              ],
+              "type": "string"
+            },
+            "type": {
+              "const": "load_state"
+            }
+          },
+          "required": [
+            "type",
+            "load_state"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "WebAuthnParticipationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "maximum": 60000,
+          "minimum": 100,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.dingdongditch.dev/machine-contract/1.0.0/speculative-plan.schema.json",
+  "$ref": "#/$defs/SpeculativePlan",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DingDongDitch SpeculativePlan"
+}

@@ -41,6 +41,8 @@ from dingdongditch.contract.target import (
     NameMatchMode,
 )
 from dingdongditch.contract.wait import LoadState, WaitConditionType
+from dingdongditch.contract.authority import ProvenanceClass
+from dingdongditch.contract.quorum import EvidenceSourceClass, VerificationPolicy
 
 
 JSON_SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
@@ -376,16 +378,20 @@ def _input_defs() -> dict[str, Any]:
         "guard": {"$ref": "#/$defs/OperationGuard"},
         "network_artifact": {"$ref": "#/$defs/NetworkArtifactRequest"},
         "webauthn": {"$ref": "#/$defs/WebAuthnParticipationRequest"},
+        "provenance": _array(_enum(ProvenanceClass), max_items=16),
+        "verification_quorum": {"$ref": "#/$defs/VerificationQuorum"},
     }
     execution_plan_properties = {
         "plan_id": nonempty,
-        "operations": _array({"$ref": "#/$defs/Operation"}, min_items=1),
+        "operations": _array({"$ref": "#/$defs/Operation"}, min_items=1, max_items=256),
         "failure_policy": {"const": "stop_on_failure"},
         "browser_config": browser_config,
         "initial_plan_timeout_ms": {"type": "integer", "minimum": 100},
         "adaptive_timeout_enabled": bool_,
         "max_plan_timeout_ms": {"type": "integer", "minimum": 100},
         "screenshot_config": {"$ref": "#/$defs/ScreenshotConfig"},
+        "authority_envelope": {"$ref": "#/$defs/AuthorityEnvelope"},
+        "speculative_plans": _array({"$ref": "#/$defs/SpeculativePlan"}, max_items=8),
     }
     return {
         "TargetConstraint": {"oneOf": constraints},
@@ -415,7 +421,21 @@ def _input_defs() -> dict[str, Any]:
         "GuardBranch": _object({"branch_id": nonempty, "when": _object({"expectations": _array({"$ref": "#/$defs/Expectation"}, min_items=1, max_items=8)}, required=("expectations",)), "execute": _array({"$ref": "#/$defs/Action"}, max_items=8)}, required=("branch_id", "when")),
         "NetworkArtifactRequest": _object({"kind": _enum(NetworkArtifactKind), "max_records": {"type": "integer", "minimum": 1, "maximum": 128}}),
         "WebAuthnParticipationRequest": _object({"request_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$"}, "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 60000}}, required=("request_id",)),
+        "VerificationCheck": _object({"verifier_id": nonempty, "expectation_id": nonempty, "evidence_source": _enum(EvidenceSourceClass)}, required=("verifier_id", "expectation_id", "evidence_source")),
+        "VerificationQuorum": _object({"policy": _enum(VerificationPolicy), "required": {"type": "integer", "minimum": 1, "maximum": 16}, "checks": _array({"$ref": "#/$defs/VerificationCheck"}, min_items=1, max_items=16)}, required=("policy", "checks")),
         "BrowserConfig": browser_config,
+        "AuthorityEnvelope": _object({
+            "policy_id": nonempty,
+            "granted_authorities": _array(_enum(ProvenanceClass), min_items=1),
+            "allowed_origins": _array(nonempty), "denied_origins": _array(nonempty),
+            "allowed_action_types": _array(nonempty), "denied_action_types": _array(nonempty),
+            "allowed_file_names": _array(nonempty), "allowed_secret_references": _array(nonempty),
+            "max_upload_bytes": _nullable({"type": "integer", "minimum": 0}),
+            "irreversible_action_types": _array(nonempty), "require_preparation_for": _array(nonempty),
+            "required_authority_by_action": {"type": "object", "additionalProperties": _enum(ProvenanceClass)},
+            "expires_at_ms": _nullable({"type": "integer", "minimum": 0}), "max_action_count": _nullable({"type": "integer", "minimum": 0}), "max_side_effect_count": _nullable({"type": "integer", "minimum": 0}),
+            "deny_untrusted_for_irreversible": bool_, "transfer_prepared_operations": bool_, "allow_frame_actions": bool_,
+        }, required=("policy_id", "granted_authorities")),
         "Operation": _object(operation_properties, required=("operation_id", "url", "action")),
         "ExecutionPlan": _object(execution_plan_properties, required=("plan_id", "operations")),
         "CanonicalExecutionPlan": _object({key: value for key, value in execution_plan_properties.items() if key != "browser_config"}, required=("plan_id", "operations")),
@@ -437,12 +457,23 @@ def _output_defs() -> dict[str, Any]:
         "ObservedRegion": _object({"region_id": string, "semantic_role": string, "accessible_name": nullable_string, "visible": {"type": "boolean"}, "bounds_px": {"$ref": "#/$defs/Geometry"}, "bounds_normalized": {"$ref": "#/$defs/Geometry"}, "parent_region_id": nullable_string, "child_region_ids": _array(string), "interactive_element_ids": _array(string)}, required=("region_id", "semantic_role", "visible", "bounds_px", "bounds_normalized"), additional=True),
         "ObservedTextBlock": _object({"text_block_id": string, "text_group_id": string, "text": string, "owning_region_id": nullable_string, "bounds_px": {"$ref": "#/$defs/Geometry"}, "bounds_normalized": {"$ref": "#/$defs/Geometry"}, "truncated": {"type": "boolean"}}, required=("text_block_id", "text_group_id", "text", "bounds_px", "bounds_normalized", "truncated"), additional=True),
         "Overlay": _object({"overlay_id": string, "role": string, "accessible_name": nullable_string, "bounds_px": {"$ref": "#/$defs/Geometry"}, "bounds_normalized": {"$ref": "#/$defs/Geometry"}, "blocking": {"type": "boolean"}, "contained_interactive_element_ids": _array(string), "z_index": _nullable({"type": "number"})}, required=("overlay_id", "role", "bounds_px", "bounds_normalized", "blocking"), additional=True),
-        "Observation": _object({"observation_id": string, "timestamp": string, "captured_at_ms": {"type": "integer"}, "browser_profile": string, "url": string, "title": string, "viewport": any_object, "document": any_object, "focus": any_object, "overlays": _array({"$ref": "#/$defs/Overlay"}), "regions": _array({"$ref": "#/$defs/ObservedRegion"}), "visible_text": _array({"$ref": "#/$defs/ObservedTextBlock"}), "interactive_elements": _array({"$ref": "#/$defs/ObservedElement"}), "spatial_relationships": _array(any_object), "scroll_context": any_object, "freshness": any_object, "diagnostics": any_object, "transaction_id": string, "snapshot_id": string, "commit_id": string, "observation_hash": string}, required=("observation_id", "timestamp", "captured_at_ms", "browser_profile", "url", "title", "viewport", "document", "focus", "overlays", "regions", "visible_text", "interactive_elements", "spatial_relationships", "scroll_context", "freshness", "diagnostics", "transaction_id", "snapshot_id", "commit_id", "observation_hash")),
+        "Observation": _object({"observation_id": string, "timestamp": string, "captured_at_ms": {"type": "integer"}, "browser_profile": string, "url": string, "title": string, "viewport": any_object, "document": any_object, "focus": any_object, "overlays": _array({"$ref": "#/$defs/Overlay"}), "regions": _array({"$ref": "#/$defs/ObservedRegion"}), "visible_text": _array({"$ref": "#/$defs/ObservedTextBlock"}), "interactive_elements": _array({"$ref": "#/$defs/ObservedElement"}), "spatial_relationships": _array(any_object), "scroll_context": any_object, "freshness": any_object, "diagnostics": any_object, "transaction_id": string, "snapshot_id": string, "commit_id": string, "observation_hash": string, "provenance": _array(_enum(ProvenanceClass), min_items=1)}, required=("observation_id", "timestamp", "captured_at_ms", "browser_profile", "url", "title", "viewport", "document", "focus", "overlays", "regions", "visible_text", "interactive_elements", "spatial_relationships", "scroll_context", "freshness", "diagnostics", "transaction_id", "snapshot_id", "commit_id", "observation_hash")),
         "ObservationSummary": _object({"collected_at_ms": {"type": "integer"}, "url": nullable_string, "notes": string, "signal_ids": _array(string)}, required=("collected_at_ms",)),
         "ExpectationResult": _object({"expectation_id": string, "expectation_type": string, "expected": any_object, "observed": any_object, "result": {"enum": ["pass", "fail", "indeterminate"]}, "evidence_refs": _array(string), "evidence_timestamp_ms": nullable_integer, "explanation": string, "freshness_ok": _nullable({"type": "boolean"}), "failure_evidence": nullable_object}, required=("expectation_id", "expectation_type", "expected", "observed", "result", "evidence_refs", "explanation", "freshness_ok", "failure_evidence")),
         "EvidenceSignal": _object({"signal_id": string, "kind": string, "availability": string, "collected_at_ms": {"type": "integer"}, "payload": any_object, "notes": string}, required=("signal_id", "kind", "availability", "collected_at_ms", "payload", "notes")),
         "FreshnessEvaluation": _object({"policy_max_age_ms": {"type": "integer"}, "action_started_at_ms": nullable_integer, "verification_completed_at_ms": nullable_integer, "stale_signal_ids": _array(string), "notes": string}, required=("policy_max_age_ms", "action_started_at_ms", "verification_completed_at_ms", "stale_signal_ids", "notes")),
         "RecoveryAttempt": _object({"reason": string, "attempt_index": {"type": "integer"}, "occurred_at_ms": {"type": "integer"}, "detail": string}, required=("reason", "attempt_index", "occurred_at_ms", "detail")),
+        "PreparedOperation": _object({"token": string, "session_id": string, "expires_at_ms": {"type": "integer"}, "status": {"enum": ["PREPARED", "COMMITTED", "INVALIDATED"]}, "action_type": string, "origin": string, "page_id": string, "state_fingerprint": string, "target_fingerprint": nullable_string, "operation_hash": string, "authority_policy_hash": nullable_string, "authority_decision": nullable_object, "mutation_epoch": nullable_integer, "arbitration_policy": nullable_string}, required=("token", "session_id", "expires_at_ms", "status", "action_type", "origin", "page_id", "state_fingerprint", "target_fingerprint", "operation_hash", "authority_policy_hash", "authority_decision", "mutation_epoch", "arbitration_policy")),
+        "AgentHandoffCheckpoint": _object({"handoff_token": string, "session_id": string, "old_agent_id": nullable_string, "recipient_agent_id": nullable_string, "control_epoch": {"type": "integer", "minimum": 0}, "expires_at_ms": {"type": "integer"}, "selected_page_id": nullable_string, "pages": _array(any_object), "observation_checkpoint": any_object, "authority": nullable_object, "receipt_chain_head": nullable_string, "pending_preparations": _array(any_object), "runtime_capabilities": _array(string), "identity": nullable_object, "mutation": nullable_object, "mutation_epoch": nullable_integer}, required=("handoff_token", "session_id", "old_agent_id", "recipient_agent_id", "control_epoch", "expires_at_ms", "selected_page_id", "pages", "observation_checkpoint", "authority", "receipt_chain_head", "pending_preparations", "runtime_capabilities", "identity", "mutation", "mutation_epoch")),
+        "AgentHandoff": _object({"session_id": string, "agent_id": string, "control_epoch": {"type": "integer", "minimum": 0}, "control_token": string, "receipt_chain_head": nullable_string, "authority": nullable_object, "identity": nullable_object}, required=("session_id", "agent_id", "control_epoch", "control_token", "receipt_chain_head", "authority", "identity")),
+        "SignedPlanAuthority": _object({"version": {"const": "1.0"}, "algorithm": {"const": "ed25519"}, "plan_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "contract_version": string, "authority_envelope_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "signer_id": string, "issued_at_ms": {"type": "integer", "minimum": 0}, "expires_at_ms": {"type": "integer", "minimum": 0}, "nonce": string, "signature": {"type": "string", "minLength": 80, "maxLength": 128}, "session_scope": nullable_string, "agent_identity_id": nullable_string, "allowed_execution_count": {"type": "integer", "minimum": 1, "maximum": 1024}, "policy_version": nullable_string}, required=("version", "algorithm", "plan_hash", "contract_version", "authority_envelope_hash", "signer_id", "issued_at_ms", "expires_at_ms", "nonce", "signature", "session_scope", "agent_identity_id", "allowed_execution_count", "policy_version")),
+        "IdentityKey": _object({"key_id": string, "public_key": string, "algorithm": {"const": "ed25519"}, "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}, required=("key_id", "public_key", "algorithm", "fingerprint")),
+        "AgentIdentity": _object({"identity_id": string, "owner_id": string, "issuer_id": string, "created_at_ms": {"type": "integer", "minimum": 0}, "version": {"type": "integer", "minimum": 1}, "keys": _array({"$ref": "#/$defs/IdentityKey"}, min_items=1, max_items=8), "capability_references": _array(string, max_items=32), "status": {"enum": ["active", "revoked"]}}, required=("identity_id", "owner_id", "issuer_id", "created_at_ms", "version", "keys", "capability_references", "status")),
+        "IdentityAssertion": _object({"version": {"const": "1.0"}, "algorithm": {"const": "ed25519"}, "identity_id": string, "identity_version": {"type": "integer", "minimum": 1}, "key_id": string, "issued_at_ms": {"type": "integer", "minimum": 0}, "expires_at_ms": {"type": "integer", "minimum": 0}, "assertion_id": string, "signature": {"type": "string", "minLength": 80, "maxLength": 128}, "controller_scope": nullable_string}, required=("version", "algorithm", "identity_id", "identity_version", "key_id", "issued_at_ms", "expires_at_ms", "assertion_id", "signature", "controller_scope")),
+        "MutationEvidence": _object({"mutation_epoch": {"type": "integer", "minimum": 0}, "actor": {"enum": ["agent", "human", "external_unknown"]}, "policy": {"enum": ["fail_on_external_mutation", "require_reprepare", "human_priority"]}, "detected_at_ms": {"type": "integer", "minimum": 0}, "source": {"enum": ["browser_state", "trusted_host", "agent_dispatch"]}, "preparation_invalidated": {"type": "boolean"}}, required=("mutation_epoch", "actor", "policy", "detected_at_ms", "source", "preparation_invalidated")),
+        "ReceiptChainCheckpoint": _object({"session_id": string, "chain_length": {"type": "integer", "minimum": 0}, "chain_head_hash": nullable_string, "timestamp_ms": {"type": "integer", "minimum": 0}, "chain_version": string, "runtime_version": nullable_string}, required=("session_id", "chain_length", "chain_head_hash", "timestamp_ms", "chain_version", "runtime_version")),
+        "ExecutionAttestationStatement": _object({"version": {"const": "1.0"}, "plan_hash": nullable_string, "signed_plan_reference": _nullable({"type": "object", "maxProperties": 8, "additionalProperties": {"type": ["string", "integer", "boolean", "null"], "maxLength": 256}}), "session_id": string, "identity_reference": _nullable({"type": "object", "maxProperties": 8, "additionalProperties": {"type": ["string", "integer", "boolean", "null"], "maxLength": 256}}), "authority_policy_hash": nullable_string, "checkpoint": {"$ref": "#/$defs/ReceiptChainCheckpoint"}, "receipt_chain_head": nullable_string, "receipt_count": {"type": "integer", "minimum": 0}, "quorum_verdict": nullable_string, "artifact_manifest_hash": nullable_string, "runtime_version": string, "contract_version": string, "browser": _nullable({"type": "object", "maxProperties": 8, "additionalProperties": {"type": ["string", "integer", "boolean", "null"], "maxLength": 256}}), "speculation_reference": _nullable({"type": "object", "maxProperties": 4, "additionalProperties": {"type": ["string", "integer", "boolean", "null"], "maxLength": 256}}), "issued_at_ms": {"type": "integer", "minimum": 0}, "expires_at_ms": {"type": "integer", "minimum": 0}, "nonce": string, "attester_id": string, "assurance_level": {"enum": ["host_attested", "independent_attester"]}}, required=("version", "plan_hash", "signed_plan_reference", "session_id", "identity_reference", "authority_policy_hash", "checkpoint", "receipt_chain_head", "receipt_count", "quorum_verdict", "artifact_manifest_hash", "runtime_version", "contract_version", "browser", "speculation_reference", "issued_at_ms", "expires_at_ms", "nonce", "attester_id", "assurance_level")),
+        "ExecutionAttestation": _object({"statement": {"$ref": "#/$defs/ExecutionAttestationStatement"}, "algorithm": {"const": "ed25519"}, "signature": string}, required=("statement", "algorithm", "signature")),
     }
 
 
@@ -541,6 +572,16 @@ def _refine_input_defs(defs: dict[str, Any]) -> None:
         },
     ]
     defs["CanonicalExecutionPlan"]["allOf"] = deepcopy(defs["ExecutionPlan"]["allOf"])
+    defs["VerificationQuorum"]["allOf"] = [
+        {
+            "if": {"properties": {"policy": {"const": "n_of_m"}}, "required": ["policy"]},
+            "then": {"required": ["required"]},
+        },
+        {
+            "if": {"properties": {"policy": {"const": "all"}}, "required": ["policy"]},
+            "then": {"not": {"required": ["required"]}},
+        },
+    ]
 
 
 def _refine_observation_defs(defs: dict[str, Any]) -> None:
@@ -671,6 +712,8 @@ def _schema(title: str, schema_id: str, root: dict[str, Any], defs: dict[str, An
 def _schemas() -> dict[str, dict[str, Any]]:
     input_defs = _input_defs()
     _refine_input_defs(input_defs)
+    input_defs["SpeculativeBranch"] = _object({"branch_id": {"type": "string"}, "preconditions": _array({"$ref": "#/$defs/Expectation"}, min_items=1, max_items=8), "continuation": {"$ref": "#/$defs/Operation"}}, required=("branch_id", "preconditions", "continuation"))
+    input_defs["SpeculativePlan"] = _object({"speculation_id": {"type": "string"}, "parent_operation_id": {"type": "string"}, "parent_operation": {"$ref": "#/$defs/Operation"}, "max_depth": {"const": 1}, "branches": _array({"$ref": "#/$defs/SpeculativeBranch"}, min_items=1, max_items=8)}, required=("speculation_id", "parent_operation_id", "parent_operation", "max_depth", "branches"))
     output_defs = _output_defs()
     _refine_observation_defs(output_defs)
     string = {"type": "string"}
@@ -700,6 +743,7 @@ def _schemas() -> dict[str, dict[str, Any]]:
         {"$ref": "#/$defs/Operation"},
         input_defs,
     )
+    speculative_plan = _schema("DingDongDitch SpeculativePlan", "speculative-plan", {"$ref": "#/$defs/SpeculativePlan"}, input_defs)
     observation = _schema(
         "DingDongDitch PageObservation",
         "observation",
@@ -707,19 +751,36 @@ def _schemas() -> dict[str, dict[str, Any]]:
         output_defs,
     )
     execution_receipt_props = {
-        "schema_version": {"const": "1.8.0"}, "operation_id": string, "verdict": {"enum": ["VERIFIED", "NOT_VERIFIED", "EXECUTION_FAILED", "INDETERMINATE"]}, "action_type": string, "target_locator": _nullable({"type": "object", "additionalProperties": True}), "target_resolution": _nullable({"type": "object", "additionalProperties": True}), "target_url": string, "started_at_ms": {"type": "integer"}, "finished_at_ms": {"type": "integer"}, "action_started_at_ms": _nullable({"type": "integer"}), "action_completed_at_ms": _nullable({"type": "integer"}), "verification_completed_at_ms": _nullable({"type": "integer"}), "execution_status": string, "execution_error": _nullable(string), "failure_kind": _nullable(string), "action_executed_successfully": {"type": "boolean"}, "action_evidence": _nullable({"type": "object", "additionalProperties": True}), "page_precondition": _nullable({"type": "object", "additionalProperties": True}), "navigation_occurred": {"type": "boolean"}, "dispatch_document_url": _nullable(string), "telemetry": _array({"type": "object", "additionalProperties": True}), "operation_timing": _nullable({"type": "object", "additionalProperties": {"type": "integer"}}), "expectation_evidence": _array({"type": "object", "additionalProperties": True}), "artifacts": _array({"type": "object", "additionalProperties": True}), "cleanup": _nullable({"type": "object", "additionalProperties": True}), "page_transition": _nullable({"type": "object", "additionalProperties": True}), "expectations_declared": {"type": "integer", "minimum": 0}, "pre_action_observation": _nullable({"$ref": "#/$defs/ObservationSummary"}), "post_action_observation": _nullable({"$ref": "#/$defs/ObservationSummary"}), "expectation_results": _array({"$ref": "#/$defs/ExpectationResult"}), "evidence": _array({"$ref": "#/$defs/EvidenceSignal"}), "freshness": {"$ref": "#/$defs/FreshnessEvaluation"}, "recovery_attempts": _array({"$ref": "#/$defs/RecoveryAttempt"}), "limitations": _array(string), "backend_identity": string, "browser_identity": string, "browser": _nullable({"type": "object", "additionalProperties": True}), "runtime_version": string,
+        "schema_version": {"const": "1.8.0"}, "operation_id": string, "verdict": {"enum": ["VERIFIED", "NOT_VERIFIED", "EXECUTION_FAILED", "INDETERMINATE"]}, "action_type": string, "target_locator": _nullable({"type": "object", "additionalProperties": True}), "target_resolution": _nullable({"type": "object", "additionalProperties": True}), "target_url": string, "started_at_ms": {"type": "integer"}, "finished_at_ms": {"type": "integer"}, "action_started_at_ms": _nullable({"type": "integer"}), "action_completed_at_ms": _nullable({"type": "integer"}), "verification_completed_at_ms": _nullable({"type": "integer"}), "execution_status": string, "execution_error": _nullable(string), "failure_kind": _nullable(string), "action_executed_successfully": {"type": "boolean"}, "action_evidence": _nullable({"type": "object", "additionalProperties": True}), "page_precondition": _nullable({"type": "object", "additionalProperties": True}), "navigation_occurred": {"type": "boolean"}, "dispatch_document_url": _nullable(string), "telemetry": _array({"type": "object", "additionalProperties": True}), "operation_timing": _nullable({"type": "object", "additionalProperties": {"type": "integer"}}), "expectation_evidence": _array({"type": "object", "additionalProperties": True}), "artifacts": _array({"type": "object", "additionalProperties": True}), "cleanup": _nullable({"type": "object", "additionalProperties": True}), "page_transition": _nullable({"type": "object", "additionalProperties": True}), "authority_decision": _nullable({"type": "object", "additionalProperties": True}), "expectations_declared": {"type": "integer", "minimum": 0}, "pre_action_observation": _nullable({"$ref": "#/$defs/ObservationSummary"}), "post_action_observation": _nullable({"$ref": "#/$defs/ObservationSummary"}), "expectation_results": _array({"$ref": "#/$defs/ExpectationResult"}), "evidence": _array({"$ref": "#/$defs/EvidenceSignal"}), "freshness": {"$ref": "#/$defs/FreshnessEvaluation"}, "recovery_attempts": _array({"$ref": "#/$defs/RecoveryAttempt"}), "limitations": _array(string), "backend_identity": string, "browser_identity": string, "browser": _nullable({"type": "object", "additionalProperties": True}), "runtime_version": string,
     }
+    # Additive governance fields intentionally remain optional for legacy receipts.
+    execution_receipt_props["transaction"] = _nullable({"type": "object", "additionalProperties": True})
+    execution_receipt_props["quorum_verification"] = _nullable({"type": "object", "additionalProperties": True})
+    execution_receipt_props["control_epoch"] = _nullable({"type": "integer", "minimum": 0})
+    execution_receipt_props["receipt_chain"] = _nullable({"type": "object", "additionalProperties": True})
+    execution_receipt_props["signed_plan"] = _nullable({"type": "object", "additionalProperties": True})
+    execution_receipt_props["identity"] = _nullable({"type": "object", "additionalProperties": True})
+    execution_receipt_props["mutation_arbitration"] = _nullable({"$ref": "#/$defs/MutationEvidence"})
+    execution_receipt_props["speculation"] = _nullable({"type": "object", "additionalProperties": True})
     execution_receipt = _schema(
         "DingDongDitch ExecutionReceipt",
         "execution-receipt",
-        _object(execution_receipt_props, required=tuple(execution_receipt_props)),
+        _object(execution_receipt_props, required=tuple(key for key in execution_receipt_props if key not in {"authority_decision", "transaction", "quorum_verification", "control_epoch", "receipt_chain", "signed_plan", "identity", "mutation_arbitration", "speculation"})),
         output_defs,
     )
     step_record = _object({"step_index": {"type": "integer", "minimum": 0}, "operation_id": string, "attempted": {"type": "boolean"}, "skipped": {"type": "boolean"}, "skip_reason": _nullable(string), "operation_verdict": _nullable(string), "failure_kind": _nullable(string), "started_at_ms": _nullable({"type": "integer"}), "finished_at_ms": _nullable({"type": "integer"}), "browser_session_id": _nullable(string), "context_id": _nullable(string), "page_id": _nullable(string), "receipt": _nullable({"$ref": "#/$defs/EmbeddedExecutionReceipt"})}, required=("step_index", "operation_id", "attempted", "skipped", "skip_reason", "operation_verdict", "failure_kind", "started_at_ms", "finished_at_ms", "browser_session_id", "context_id", "page_id", "receipt"))
     plan_receipt_props = {"schema_version": {"const": "2.2.0"}, "plan_id": string, "plan_verdict": {"enum": ["VERIFIED", "NOT_VERIFIED", "EXECUTION_FAILED", "INDETERMINATE"]}, "completion_status": {"enum": ["completed", "stopped", "not_started"]}, "failure_policy": {"const": "stop_on_failure"}, "declared_step_count": {"type": "integer", "minimum": 0}, "attempted_step_count": {"type": "integer", "minimum": 0}, "verified_step_count": {"type": "integer", "minimum": 0}, "skipped_step_count": {"type": "integer", "minimum": 0}, "decisive_step_index": _nullable({"type": "integer"}), "decisive_operation_id": _nullable(string), "failure_kind": _nullable(string), "started_at_ms": {"type": "integer"}, "finished_at_ms": {"type": "integer"}, "duration_ms": {"type": "integer", "minimum": 0}, "browser": _nullable({"type": "object", "additionalProperties": True}), "backend_identity": string, "browser_session_id": _nullable(string), "context_id": _nullable(string), "page_id": _nullable(string), "steps": _array({"$ref": "#/$defs/PlanStepRecord"}), "limitations": _array(string), "runtime_version": string, "execution_error": _nullable(string), "plan": _nullable({"type": "object", "additionalProperties": True}), "plan_timing": _nullable({"type": "object", "additionalProperties": True}), "lifecycle": _nullable({"type": "object", "additionalProperties": True}), "telemetry": _array({"type": "object", "additionalProperties": True})}
-    plan_defs = {**output_defs, "EmbeddedExecutionReceipt": _object(execution_receipt_props, required=tuple(execution_receipt_props)), "PlanStepRecord": step_record}
+    plan_defs = {**output_defs, "EmbeddedExecutionReceipt": _object(execution_receipt_props, required=tuple(key for key in execution_receipt_props if key not in {"authority_decision", "transaction", "quorum_verification", "control_epoch", "receipt_chain", "signed_plan", "identity", "mutation_arbitration", "speculation"})), "PlanStepRecord": step_record}
     plan_receipt = _schema("DingDongDitch PlanReceipt", "plan-receipt", _object(plan_receipt_props, required=tuple(plan_receipt_props)), plan_defs)
-    return {"plan-document": plan_document, "execution-plan": execution_plan, "operation": operation, "observation": observation, "execution-receipt": execution_receipt, "plan-receipt": plan_receipt}
+    prepared_operation = _schema("DingDongDitch PreparedOperation", "prepared-operation", {"$ref": "#/$defs/PreparedOperation"}, output_defs)
+    agent_handoff_checkpoint = _schema("DingDongDitch AgentHandoffCheckpoint", "agent-handoff-checkpoint", {"$ref": "#/$defs/AgentHandoffCheckpoint"}, output_defs)
+    agent_handoff = _schema("DingDongDitch AgentHandoff", "agent-handoff", {"$ref": "#/$defs/AgentHandoff"}, output_defs)
+    signed_plan_authority = _schema("DingDongDitch SignedPlanAuthority", "signed-plan-authority", {"$ref": "#/$defs/SignedPlanAuthority"}, output_defs)
+    agent_identity = _schema("DingDongDitch AgentIdentity", "agent-identity", {"$ref": "#/$defs/AgentIdentity"}, output_defs)
+    identity_assertion = _schema("DingDongDitch IdentityAssertion", "identity-assertion", {"$ref": "#/$defs/IdentityAssertion"}, output_defs)
+    mutation_evidence = _schema("DingDongDitch MutationEvidence", "mutation-evidence", {"$ref": "#/$defs/MutationEvidence"}, output_defs)
+    execution_attestation = _schema("DingDongDitch ExecutionAttestation", "execution-attestation", {"$ref": "#/$defs/ExecutionAttestation"}, output_defs)
+    return {"plan-document": plan_document, "execution-plan": execution_plan, "operation": operation, "speculative-plan": speculative_plan, "observation": observation, "execution-receipt": execution_receipt, "plan-receipt": plan_receipt, "prepared-operation": prepared_operation, "agent-handoff-checkpoint": agent_handoff_checkpoint, "agent-handoff": agent_handoff, "signed-plan-authority": signed_plan_authority, "agent-identity": agent_identity, "identity-assertion": identity_assertion, "mutation-evidence": mutation_evidence, "execution-attestation": execution_attestation}
 
 
 def schema(name: str) -> dict[str, Any]:

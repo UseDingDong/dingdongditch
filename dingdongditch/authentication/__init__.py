@@ -10,6 +10,7 @@ from .errors import AuthenticationError, AuthenticationFailureKind
 from .profiles import ProfileInfo, ProfileManager, profile_root
 from .secrets import (
     MappingSecretProvider,
+    SecretBinding,
     SecretProvider,
     SecretReference,
     SecretResolutionReceipt,
@@ -36,7 +37,7 @@ __all__ = [
     "AuthEvent", "AuthEventType", "AuthenticationCallbacks",
     "AuthenticationCapability", "AuthenticationError",
     "AuthenticationFailureKind", "MappingSecretProvider", "ProfileInfo",
-    "ProfileManager", "SecretProvider", "SecretReference", "SecretResolutionReceipt",
+    "ProfileManager", "SecretProvider", "SecretReference", "SecretBinding", "SecretResolutionReceipt",
     "SecretValue", "PORTABLE_STATE_SCHEMA_VERSION", "PortableStateFeature",
     "PortableStatePolicy", "PortableStateReceipt", "profile_root", "redact",
     "WebAuthnParticipationRequest", "WebAuthnParticipationReceipt",

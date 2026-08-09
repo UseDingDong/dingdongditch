@@ -810,6 +810,10 @@ class Operation:
     # Explicit host-authentication participation after dispatch.  This is a
     # bounded transport request, not credential material or browser control.
     webauthn: Any | None = None
+    # Informational provenance follows the proposed operation into the runtime.
+    # It is never an authority grant; the session envelope owns grants.
+    provenance: tuple[Any, ...] = ()
+    verification_quorum: Any | None = None
 
     def validate(self) -> None:
         if not self.operation_id:
@@ -865,6 +869,28 @@ class Operation:
             if not isinstance(self.webauthn, WebAuthnParticipationRequest):
                 raise ValueError("webauthn must be a WebAuthnParticipationRequest")
             self.webauthn.validate()
+        from dingdongditch.contract.authority import ProvenanceClass
+        if not isinstance(self.provenance, (tuple, list)):
+            raise ValueError("provenance must be a sequence of ProvenanceClass values")
+        if any(not isinstance(value, ProvenanceClass) for value in self.provenance):
+            raise ValueError("provenance must contain ProvenanceClass values")
+        if self.verification_quorum is not None:
+            from dingdongditch.contract.quorum import VerificationQuorum
+            if not isinstance(self.verification_quorum, VerificationQuorum):
+                raise ValueError("verification_quorum must be a VerificationQuorum")
+            expectation_ids = tuple(
+                item.expectation_id or f"exp-{index + 1}"
+                for index, item in enumerate(self.expectations)
+            )
+            if len(expectation_ids) != len(set(expectation_ids)):
+                raise ValueError("verification quorum requires unique expectation_id values")
+            self.verification_quorum.validate(
+                expectation_ids=expectation_ids,
+                expectation_types={
+                    item.expectation_id or f"exp-{index + 1}": item.type.value
+                    for index, item in enumerate(self.expectations)
+                },
+            )
         from dingdongditch.contract.page import PageTransition, PageTransitionPolicy
 
         transition = self.page_transition or PageTransition()
@@ -930,4 +956,8 @@ class Operation:
                 else None
             ),
             "webauthn": self.webauthn.describe() if self.webauthn is not None else None,
+            "provenance": [value.value for value in self.provenance],
+            "verification_quorum": (
+                self.verification_quorum.describe() if self.verification_quorum is not None else None
+            ),
         }

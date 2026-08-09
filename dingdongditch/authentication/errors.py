@@ -16,6 +16,8 @@ class AuthenticationFailureKind(str, Enum):
     SECRET_PROVIDER_FAILED = "secret_provider_failed"
     SECRET_PROVIDER_TIMEOUT = "secret_provider_timeout"
     SECRET_VALUE_INVALID = "secret_value_invalid"
+    SECRET_BINDING_UNAVAILABLE = "secret_binding_unavailable"
+    SECRET_BINDING_CHANGED = "secret_binding_changed"
     SESSION_UNSUPPORTED = "session_unsupported"
     SESSION_STALE = "session_stale"
     CALLBACK_FAILED = "authentication_callback_failed"

@@ -69,6 +69,264 @@
       ],
       "type": "object"
     },
+    "AgentHandoff": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "type": "string"
+        },
+        "authority": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "control_epoch": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "control_token": {
+          "type": "string"
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receipt_chain_head": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "agent_id",
+        "control_epoch",
+        "control_token",
+        "receipt_chain_head",
+        "authority",
+        "identity"
+      ],
+      "type": "object"
+    },
+    "AgentHandoffCheckpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "control_epoch": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expires_at_ms": {
+          "type": "integer"
+        },
+        "handoff_token": {
+          "type": "string"
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mutation": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mutation_epoch": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observation_checkpoint": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "old_agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pages": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "pending_preparations": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "receipt_chain_head": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recipient_agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "selected_page_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "handoff_token",
+        "session_id",
+        "old_agent_id",
+        "recipient_agent_id",
+        "control_epoch",
+        "expires_at_ms",
+        "selected_page_id",
+        "pages",
+        "observation_checkpoint",
+        "authority",
+        "receipt_chain_head",
+        "pending_preparations",
+        "runtime_capabilities",
+        "identity",
+        "mutation",
+        "mutation_epoch"
+      ],
+      "type": "object"
+    },
+    "AgentIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "capability_references": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "created_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "identity_id": {
+          "type": "string"
+        },
+        "issuer_id": {
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/IdentityKey"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        },
+        "owner_id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "revoked"
+          ]
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "identity_id",
+        "owner_id",
+        "issuer_id",
+        "created_at_ms",
+        "version",
+        "keys",
+        "capability_references",
+        "status"
+      ],
+      "type": "object"
+    },
     "AnyObject": {
       "additionalProperties": true,
       "type": "object"
@@ -120,6 +378,17 @@
           },
           "type": "array"
         },
+        "authority_decision": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "backend_identity": {
           "type": "string"
         },
@@ -142,6 +411,17 @@
             {
               "additionalProperties": true,
               "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "control_epoch": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
             },
             {
               "type": "null"
@@ -210,11 +490,32 @@
         "freshness": {
           "$ref": "#/$defs/FreshnessEvaluation"
         },
+        "identity": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "limitations": {
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "mutation_arbitration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MutationEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "navigation_occurred": {
           "type": "boolean"
@@ -277,6 +578,28 @@
             }
           ]
         },
+        "quorum_verification": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receipt_chain": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "recovery_attempts": {
           "items": {
             "$ref": "#/$defs/RecoveryAttempt"
@@ -288,6 +611,28 @@
         },
         "schema_version": {
           "const": "1.8.0"
+        },
+        "signed_plan": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speculation": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "started_at_ms": {
           "type": "integer"
@@ -323,6 +668,17 @@
             "type": "object"
           },
           "type": "array"
+        },
+        "transaction": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "verdict": {
           "enum": [
@@ -415,6 +771,223 @@
         "collected_at_ms",
         "payload",
         "notes"
+      ],
+      "type": "object"
+    },
+    "ExecutionAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "ed25519"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "statement": {
+          "$ref": "#/$defs/ExecutionAttestationStatement"
+        }
+      },
+      "required": [
+        "statement",
+        "algorithm",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "ExecutionAttestationStatement": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_manifest_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assurance_level": {
+          "enum": [
+            "host_attested",
+            "independent_attester"
+          ]
+        },
+        "attester_id": {
+          "type": "string"
+        },
+        "authority_policy_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "browser": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maxLength": 256,
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "maxProperties": 8,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/ReceiptChainCheckpoint"
+        },
+        "contract_version": {
+          "type": "string"
+        },
+        "expires_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "identity_reference": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maxLength": 256,
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "maxProperties": 8,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issued_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nonce": {
+          "type": "string"
+        },
+        "plan_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quorum_verdict": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receipt_chain_head": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receipt_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runtime_version": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "signed_plan_reference": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maxLength": 256,
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "maxProperties": 8,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speculation_reference": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maxLength": 256,
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "maxProperties": 4,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "const": "1.0"
+        }
+      },
+      "required": [
+        "version",
+        "plan_hash",
+        "signed_plan_reference",
+        "session_id",
+        "identity_reference",
+        "authority_policy_hash",
+        "checkpoint",
+        "receipt_chain_head",
+        "receipt_count",
+        "quorum_verdict",
+        "artifact_manifest_hash",
+        "runtime_version",
+        "contract_version",
+        "browser",
+        "speculation_reference",
+        "issued_at_ms",
+        "expires_at_ms",
+        "nonce",
+        "attester_id",
+        "assurance_level"
       ],
       "type": "object"
     },
@@ -633,6 +1206,91 @@
       ],
       "type": "object"
     },
+    "IdentityAssertion": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "ed25519"
+        },
+        "assertion_id": {
+          "type": "string"
+        },
+        "controller_scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expires_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "identity_id": {
+          "type": "string"
+        },
+        "identity_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "issued_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "signature": {
+          "maxLength": 128,
+          "minLength": 80,
+          "type": "string"
+        },
+        "version": {
+          "const": "1.0"
+        }
+      },
+      "required": [
+        "version",
+        "algorithm",
+        "identity_id",
+        "identity_version",
+        "key_id",
+        "issued_at_ms",
+        "expires_at_ms",
+        "assertion_id",
+        "signature",
+        "controller_scope"
+      ],
+      "type": "object"
+    },
+    "IdentityKey": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "ed25519"
+        },
+        "fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "public_key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key_id",
+        "public_key",
+        "algorithm",
+        "fingerprint"
+      ],
+      "type": "object"
+    },
     "LocatorCandidate": {
       "additionalProperties": true,
       "properties": {
@@ -672,6 +1330,52 @@
         "locator_value",
         "confidence",
         "unique"
+      ],
+      "type": "object"
+    },
+    "MutationEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "enum": [
+            "agent",
+            "human",
+            "external_unknown"
+          ]
+        },
+        "detected_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mutation_epoch": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "policy": {
+          "enum": [
+            "fail_on_external_mutation",
+            "require_reprepare",
+            "human_priority"
+          ]
+        },
+        "preparation_invalidated": {
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "browser_state",
+            "trusted_host",
+            "agent_dispatch"
+          ]
+        }
+      },
+      "required": [
+        "mutation_epoch",
+        "actor",
+        "policy",
+        "detected_at_ms",
+        "source",
+        "preparation_invalidated"
       ],
       "type": "object"
     },
@@ -715,6 +1419,22 @@
           "items": {
             "$ref": "#/$defs/Overlay"
           },
+          "type": "array"
+        },
+        "provenance": {
+          "items": {
+            "enum": [
+              "user_authority",
+              "host_policy",
+              "agent_reasoning",
+              "web_untrusted",
+              "third_party_content",
+              "secret_provider",
+              "system_runtime"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
           "type": "array"
         },
         "regions": {
@@ -1437,6 +2157,158 @@
       ],
       "type": "object"
     },
+    "PreparedOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "action_type": {
+          "type": "string"
+        },
+        "arbitration_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authority_decision": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authority_policy_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expires_at_ms": {
+          "type": "integer"
+        },
+        "mutation_epoch": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation_hash": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "state_fingerprint": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PREPARED",
+            "COMMITTED",
+            "INVALIDATED"
+          ]
+        },
+        "target_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "session_id",
+        "expires_at_ms",
+        "status",
+        "action_type",
+        "origin",
+        "page_id",
+        "state_fingerprint",
+        "target_fingerprint",
+        "operation_hash",
+        "authority_policy_hash",
+        "authority_decision",
+        "mutation_epoch",
+        "arbitration_policy"
+      ],
+      "type": "object"
+    },
+    "ReceiptChainCheckpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "chain_head_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chain_length": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "chain_version": {
+          "type": "string"
+        },
+        "runtime_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "timestamp_ms": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_id",
+        "chain_length",
+        "chain_head_hash",
+        "timestamp_ms",
+        "chain_version",
+        "runtime_version"
+      ],
+      "type": "object"
+    },
     "RecoveryAttempt": {
       "additionalProperties": false,
       "properties": {
@@ -1610,6 +2482,99 @@
         "max_scroll_y",
         "contained_region_ids",
         "contained_interactive_element_ids"
+      ],
+      "type": "object"
+    },
+    "SignedPlanAuthority": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_identity_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "algorithm": {
+          "const": "ed25519"
+        },
+        "allowed_execution_count": {
+          "maximum": 1024,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "authority_envelope_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "contract_version": {
+          "type": "string"
+        },
+        "expires_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "issued_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nonce": {
+          "type": "string"
+        },
+        "plan_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "policy_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signature": {
+          "maxLength": 128,
+          "minLength": 80,
+          "type": "string"
+        },
+        "signer_id": {
+          "type": "string"
+        },
+        "version": {
+          "const": "1.0"
+        }
+      },
+      "required": [
+        "version",
+        "algorithm",
+        "plan_hash",
+        "contract_version",
+        "authority_envelope_hash",
+        "signer_id",
+        "issued_at_ms",
+        "expires_at_ms",
+        "nonce",
+        "signature",
+        "session_scope",
+        "agent_identity_id",
+        "allowed_execution_count",
+        "policy_version"
       ],
       "type": "object"
     },
