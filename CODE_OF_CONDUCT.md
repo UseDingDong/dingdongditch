@@ -3,10 +3,7 @@
 ## Our pledge
 
 We pledge to make participation in DingDongDitch welcoming and harassment-free
-for everyone, regardless of age, body size, visible or invisible disability,
-ethnicity, sex characteristics, gender identity and expression, experience,
-education, socioeconomic status, nationality, personal appearance, race,
-religion, or sexual identity and orientation.
+for everyone, regardless of race, religion, gender, or background.
 
 ## Expected behavior
 
