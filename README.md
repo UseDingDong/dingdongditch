@@ -6,6 +6,29 @@ browser operations and expected outcomes. DingDongDitch executes only those
 operations, verifies the resulting browser state, and returns structured
 receipts instead of guessing, healing ambiguous locators, or inventing work.
 
+It is execution infrastructure, not an AI agent or a workflow engine.
+
+## Receipts verify state, not just dispatch
+
+An action being dispatched does not prove that the intended state resulted. An
+operation is `VERIFIED` only when every declared expectation passes with fresh
+browser evidence. A click or upload may therefore dispatch successfully and
+still be `NOT_VERIFIED` or `INDETERMINATE` if the declared result is absent or
+cannot be justified.
+
+| Verdict | Meaning |
+| --- | --- |
+| `VERIFIED` | The action completed and all declared expectations passed with fresh evidence. |
+| `NOT_VERIFIED` | Execution completed, but a declared expectation was false. |
+| `INDETERMINATE` | Evidence was ambiguous, stale, unavailable, or otherwise insufficient for a justified claim. |
+| `EXECUTION_FAILED` | Validation, setup, target resolution, or browser dispatch failed. |
+
+## Why DingDongDitch
+
+| Typical agent | DingDongDitch |
+| --- | --- |
+| dispatch → assume success | plan → execute → verify → structured receipt |
+
 ```text
 External Agent / Planner
         ↓
@@ -20,28 +43,12 @@ Browser
 Structured Receipt
 ```
 
-It is execution infrastructure, not an AI agent or a workflow engine.
+## Quick start
 
-## Execution governance
+Choose the MCP path for an MCP-capable agent or the Python/CLI path for a
+repository-local deterministic plan.
 
-Stateful hosts can opt into ten composable controls: **Authority Firewall**,
-browser **Two-Phase Commit**, **Quorum Verification**, SHA-256 receipt chains
-and checkpoints, **Cross-Agent Hot Handoff**, **Signed Plan Authority**,
-user-owned **Agent Identity**, human/agent **Mutation Arbitration**,
-host/external **Execution Attestation**, and bounded **Transactional
-Speculative Execution**. These controls enforce host-declared authority
-boundaries; they do not make prompt injection impossible or provide external
-server-side rollback. See [Execution governance](./Engineering/EXECUTION_GOVERNANCE.md)
-and run `python examples/complete_governance_demo.py` for a local deterministic
-all-ten demonstration without an AI API.
-
-For a new agent product, expose `GovernedAgentSession` (or authenticated
-`GovernedAgentService`) rather than raw execution helpers. `TrustedHostRuntime`
-retains policy installation, secrets, browser lifecycle, and handoff-token
-delivery; the machine contract is a proposal format. The exact trust boundary
-and limitations are in [Execution governance](./Engineering/EXECUTION_GOVERNANCE.md).
-
-## MCP quick start
+### MCP
 
 DingDongDitch provides an optional, stdio-only MCP adapter for the stable MCP
 protocol revision **2026-07-28**. It is transport glue over a host-created
@@ -74,11 +81,43 @@ capabilities. See [MCP adapter](./Engineering/MCP_ADAPTER.md), the minimal
 The adapter remains model-neutral: any MCP-capable host or agent can use this
 same governed interface, regardless of its model or vendor.
 
-## Connect Any Agent
+### Python / CLI
 
-DingDongDitch publishes a versioned, Draft 2020-12 machine contract for
-external planners. The generic JSON Schema path is the primary integration
-mechanism; vendor envelopes are optional conveniences.
+Requires Python 3.11 or newer. This runs a repository-local deterministic
+fixture, verifies declared browser state, and writes an inspectable receipt.
+
+```bash
+git clone <repository-url>
+cd DINGDONGDITCH
+python -m pip install -e ".[dev]"
+python -m playwright install chromium
+python -m dingdongditch run-plan examples/plans/basic_navigation.json --output artifacts/quickstart-receipt.json
+python -m json.tool artifacts/quickstart-receipt.json
+```
+
+The terminal reports the plan verdict; the JSON file contains step receipts,
+verification results, timing, and bounded evidence. `artifacts/` is ignored by
+Git so local receipt output does not pollute a working tree.
+
+For trusted-host compatibility code (not an LLM capability), a host may still
+construct an `ExecutionPlan` using the typed API or JSON, then consume the
+result:
+
+```python
+from dingdongditch import execute_plan
+
+# `plan` was authored by your host, agent, CI job, or test -- not by DingDongDitch.
+receipt = execute_plan(plan)
+result = receipt.to_dict()
+if result["plan_verdict"] != "VERIFIED":
+    print(result)  # The host decides what to do next; the runtime does not.
+```
+
+See the runnable [host API example](./examples/host_execution_plan.py) and the
+[JSON plan guide](./examples/plans/README.md). The CLI and runtime never
+author plans, reinterpret intent, or choose recovery steps.
+
+## Connect Any Agent
 
 Your model is not part of the DingDongDitch architecture. It does not matter
 whether the plan comes from GPT, Claude, Gemini, Grok, DeepSeek, Llama, Qwen,
@@ -93,6 +132,12 @@ execution-interface compatibility claim, not a claim that every planner can
 reliably produce valid plans. DingDongDitch does not integrate with a model's
 reasoning; it defines the execution boundary beneath it. If a system can emit
 the contract, it can target the runtime.
+
+## Machine-readable contract
+
+DingDongDitch publishes a versioned, Draft 2020-12 machine contract for
+external planners. The generic JSON Schema path is the primary integration
+mechanism; vendor envelopes are optional conveniences.
 
 ```text
 planner/model
@@ -165,43 +210,26 @@ The generic schema remains authoritative; optional
 `dingdongditch.adapters.openai`, `.anthropic`, and `.gemini` modules only
 reshape that same contract.
 
-## Quick start
+## Execution Governance
 
-Requires Python 3.11 or newer. This runs a repository-local deterministic
-fixture, verifies declared browser state, and writes an inspectable receipt.
+Stateful hosts can opt into ten composable controls: **Authority Firewall**,
+browser **Two-Phase Commit**, **Quorum Verification**, SHA-256 receipt chains
+and checkpoints, **Cross-Agent Hot Handoff**, **Signed Plan Authority**,
+user-owned **Agent Identity**, human/agent **Mutation Arbitration**,
+host/external **Execution Attestation**, and bounded **Transactional
+Speculative Execution**. These controls enforce host-declared authority
+boundaries; they do not make prompt injection impossible or provide external
+server-side rollback. See [Execution governance](./Engineering/EXECUTION_GOVERNANCE.md)
+and run `python examples/complete_governance_demo.py` for a local deterministic
+all-ten demonstration without an AI API.
 
-```bash
-git clone <repository-url>
-cd DINGDONGDITCH
-python -m pip install -e ".[dev]"
-python -m playwright install chromium
-python -m dingdongditch run-plan examples/plans/basic_navigation.json --output artifacts/quickstart-receipt.json
-python -m json.tool artifacts/quickstart-receipt.json
-```
+For a new agent product, expose `GovernedAgentSession` (or authenticated
+`GovernedAgentService`) rather than raw execution helpers. `TrustedHostRuntime`
+retains policy installation, secrets, browser lifecycle, and handoff-token
+delivery; the machine contract is a proposal format. The exact trust boundary
+and limitations are in [Execution governance](./Engineering/EXECUTION_GOVERNANCE.md).
 
-The terminal reports the plan verdict; the JSON file contains step receipts,
-verification results, timing, and bounded evidence. `artifacts/` is ignored by
-Git so local receipt output does not pollute a working tree.
-
-For trusted-host compatibility code (not an LLM capability), a host may still
-construct an `ExecutionPlan` using the typed API or JSON, then consume the
-result:
-
-```python
-from dingdongditch import execute_plan
-
-# `plan` was authored by your host, agent, CI job, or test -- not by DingDongDitch.
-receipt = execute_plan(plan)
-result = receipt.to_dict()
-if result["plan_verdict"] != "VERIFIED":
-    print(result)  # The host decides what to do next; the runtime does not.
-```
-
-See the runnable [host API example](./examples/host_execution_plan.py) and the
-[JSON plan guide](./examples/plans/README.md). The CLI and runtime never
-author plans, reinterpret intent, or choose recovery steps.
-
-## What DingDongDitch provides
+## What DingDongDitch Provides
 
 - A governed host/planner boundary with Authority Firewall, Two-Phase Commit,
   Quorum Verification, receipt-chain checkpoints, and Cross-Agent Hot Handoff.
@@ -227,20 +255,7 @@ author plans, reinterpret intent, or choose recovery steps.
 - Host-owned `SecretProvider` / opaque `SecretReference` injection and bounded,
   host-controlled WebAuthn participation.
 
-## Receipts verify state, not just dispatch
-
-An action being dispatched does not prove that the intended state resulted. An
-operation is `VERIFIED` only when every declared expectation passes with fresh
-browser evidence. A click or upload may therefore dispatch successfully and
-still be `NOT_VERIFIED` or `INDETERMINATE` if the declared result is absent or
-cannot be justified.
-
-| Verdict | Meaning |
-| --- | --- |
-| `VERIFIED` | The action completed and all declared expectations passed with fresh evidence. |
-| `NOT_VERIFIED` | Execution completed, but a declared expectation was false. |
-| `INDETERMINATE` | Evidence was ambiguous, stale, unavailable, or otherwise insufficient for a justified claim. |
-| `EXECUTION_FAILED` | Validation, setup, target resolution, or browser dispatch failed. |
+## Detailed receipt and evidence architecture
 
 Receipt schema **1.8.0** separates control-flow truth from diagnostics:
 
