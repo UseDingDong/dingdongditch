@@ -24,7 +24,7 @@ from dingdongditch.runtime.generation_monitor import (
 from dingdongditch.runtime.inbox import read_published_text
 from dingdongditch.runtime.run_ownership import acquire_run_generation
 from dingdongditch.runtime.publication import publish_json
-from dingdongditch.runtime.typing_session import TypingFocusPolicy, TypingSession, TypingSessionConfig
+from dingdongditch.runtime.typing_session import TypingSession, TypingSessionConfig
 
 ROOT = Path(__file__).resolve().parent
 INBOX = ROOT / "messages"
@@ -308,9 +308,8 @@ def main() -> int:
                     session_id=f"gemini-live-turn-{turn}",
                     url=current.url,
                     text=message,
-                    focus_locator=prompt_locator,
-                    focus_policy=TypingFocusPolicy.TARGET_FOCUSED,
-                    verify_every_characters=25,
+                    target_locator=prompt_locator,
+                    max_text_chunk_characters=25,
                     inter_key_delay_ms=4,
                     operation_timeout_ms=30_000,
                 ),

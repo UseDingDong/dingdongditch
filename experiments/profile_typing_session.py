@@ -77,8 +77,8 @@ def main() -> None:
                 session_id="profile",
                 url=url,
                 text="a" * 40,
-                focus_locator=target,
-                verify_every_characters=10,
+                target_locator=target,
+                max_text_chunk_characters=10,
             ),
             backend=backend,
         ).run()

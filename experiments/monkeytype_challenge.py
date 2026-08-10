@@ -22,7 +22,6 @@ from dingdongditch import (
     Operation,
     ScreenshotConfig,
     ScreenshotPolicy,
-    TypingFocusPolicy,
     TypingSession,
     TypingSessionConfig,
     execute_operation,
@@ -289,10 +288,8 @@ def main() -> int:
                 session_id="monkeytype-typing",
                 url=URL,
                 text=phrase,
-                focus_locator=typing_context_locator,
-                acquire_locator=words_locator,
-                focus_policy=TypingFocusPolicy.TARGET_FOCUSED,
-                verify_every_characters=10,
+                target_locator=typing_context_locator,
+                max_text_chunk_characters=10,
                 inter_key_delay_ms=0,
                 operation_timeout_ms=30_000,
             ),
@@ -304,8 +301,8 @@ def main() -> int:
         result["active_typing_time_seconds"] = round(
             typing_result.duration_ms / 1000, 3
         )
-        result["session_checkpoints"] = [
-            item.to_dict() for item in typing_result.checkpoints
+        result["session_receipts"] = [
+            item.to_dict() for item in typing_result.receipts
         ]
         result["page_observations"] = sum(
             int(getattr(item, "pre_action_observation", None) is not None)
@@ -331,8 +328,8 @@ def main() -> int:
                     "duration_ms": typing_result.duration_ms,
                     "failure_kind": typing_result.failure_kind,
                     "error": typing_result.error,
-                    "checkpoints": [
-                        item.to_dict() for item in typing_result.checkpoints
+                    "receipts": [
+                        item.to_dict() for item in typing_result.receipts
                     ],
                 },
                 sort_keys=True,

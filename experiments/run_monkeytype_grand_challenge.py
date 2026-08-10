@@ -10,7 +10,7 @@ from pathlib import Path
 from dingdongditch import (
     Action, ActionType, BrowserConfig, BrowserProfile, Locator, LocatorStrategy,
     NameMatchMode, ObservationReference, Operation, execute_operation, observe_page,
-    TypingFocusPolicy, TypingSession, TypingSessionConfig,
+    TypingSession, TypingSessionConfig,
 )
 from dingdongditch.backends.playwright_backend import PlaywrightBackend
 
@@ -261,22 +261,14 @@ def main() -> None:
             session_id="grand-challenge-typing",
             url=after.url,
             text=typing_text,
-            focus_locator=typing_locator,
-            acquire_locator=typing_locator,
-            focus_policy=(
-                TypingFocusPolicy.KEYBOARD_SINK_FOCUSED
-                if typing_context_source == "page_keyboard_main_region"
-                else TypingFocusPolicy.PAGE_FOCUSED_TARGET_VISIBLE
-            ),
-            verify_every_characters=20,
+            target_locator=typing_locator,
+            max_text_chunk_characters=20,
             inter_key_delay_ms=0,
-            final_separator_handshake=True,
-            completion_settle_ms=750,
         ), backend=backend).run()
         report["active_typing_time_ms"] = round((time.monotonic() - typing_started) * 1000)
         report["typing_session"] = typing_result.to_dict()
         report["typed_characters"] = typing_result.typed_characters
-        checkpoints.extend(item.to_dict() for item in typing_result.checkpoints)
+        checkpoints.extend(item.to_dict() for item in typing_result.receipts)
         if typing_result.status.value != "completed":
             report["stop_reason"] = (
                 f"TypingSession stopped: {typing_result.failure_kind}")

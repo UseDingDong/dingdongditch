@@ -17,7 +17,7 @@ from dingdongditch.contract.plan import ExecutionPlan
 from dingdongditch.contract.screenshot import ScreenshotConfig, ScreenshotPolicy
 from dingdongditch.inspection import observe_page
 from dingdongditch.runtime.plan_executor import execute_plan
-from dingdongditch.runtime.typing_session import TypingFocusPolicy, TypingSession, TypingSessionConfig
+from dingdongditch.runtime.typing_session import TypingSession, TypingSessionConfig
 
 ROOT = Path(__file__).resolve().parent
 GEMINI = "https://gemini.google.com/app"
@@ -305,9 +305,8 @@ def main() -> int:
                 session_id="gemini-message-1",
                 url=initial.url,
                 text=MESSAGE_1,
-                focus_locator=prompt_locator,
-                focus_policy=TypingFocusPolicy.TARGET_FOCUSED,
-                verify_every_characters=25,
+                target_locator=prompt_locator,
+                max_text_chunk_characters=25,
                 inter_key_delay_ms=4,
                 operation_timeout_ms=15_000,
             ),
@@ -354,9 +353,8 @@ def main() -> int:
                 session_id="gemini-message-2",
                 url=completed_1.url,
                 text=MESSAGE_2,
-                focus_locator=prompt_locator_2,
-                focus_policy=TypingFocusPolicy.TARGET_FOCUSED,
-                verify_every_characters=25,
+                target_locator=prompt_locator_2,
+                max_text_chunk_characters=25,
                 inter_key_delay_ms=4,
                 operation_timeout_ms=15_000,
             ),
