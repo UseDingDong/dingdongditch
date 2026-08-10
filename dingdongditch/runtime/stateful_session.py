@@ -70,6 +70,7 @@ from dingdongditch.contract.download import TrustedDownloadConfig
 from dingdongditch.evidence.collector import EvidenceCollector
 from dingdongditch.runtime.executor import _execute_operation, _failed_receipt
 from dingdongditch.runtime.plan_executor import execute_plan as _execute_plan
+from dingdongditch.runtime.typing_session import TypingSession, TypingSessionConfig, TypingSessionResult
 from dingdongditch.runtime.verifier import evaluate_expectations
 
 
@@ -205,6 +206,26 @@ class SessionOperationResult:
             "started_at_ms": self.started_at_ms,
             "finished_at_ms": self.finished_at_ms,
             "duration_ms": max(0, self.finished_at_ms - self.started_at_ms),
+        }
+
+
+@dataclass(frozen=True)
+class SessionTypingResult:
+    """Public aggregate for a TypingSession dispatched by a governed lease."""
+
+    session_id: str
+    result: TypingSessionResult
+    receipt_count: int
+    last_receipt: ExecutionReceipt | None
+    receipt_chain_checkpoint: ReceiptChainCheckpoint
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "typing": self.result.to_dict(),
+            "receipt_count": self.receipt_count,
+            "last_receipt": self.last_receipt.to_dict() if self.last_receipt is not None else None,
+            "receipt_chain_checkpoint": self.receipt_chain_checkpoint.to_dict(),
         }
 
 
@@ -1145,7 +1166,10 @@ class StatefulSessionRuntime:
                     failure_kind=SessionFailureKind.OPERATION_REJECTED,
                 )
             if observation_reference is not None and observation_reference.mutation_epoch is not None and observation_reference.mutation_epoch != record.mutation_epoch:
-                raise StatefulSessionError("observation was created before a browser mutation", failure_kind=SessionFailureKind.MUTATION_CONFLICT)
+                raise StatefulSessionError(
+                    "observation was created before a browser mutation",
+                    failure_kind=SessionFailureKind.MUTATION_CONFLICT,
+                )
             self._reject_mutation_if_policy_requires(
                 record, changed=changed, operation_has_fresh_observation=(observation_reference is not None),
             )
@@ -1386,6 +1410,54 @@ class StatefulSessionRuntime:
                 recoverable=alive,
                 terminal=not alive,
                 page_state=tuple(backend.list_pages() if alive else ()),
+            )
+
+    def execute_typing_session(
+        self,
+        session_id: str,
+        config: TypingSessionConfig,
+        *,
+        observation_reference: ObservationReference | None = None,
+        agent_id: str | None = None,
+        control_token: str | None = None,
+    ) -> SessionTypingResult:
+        """Run the generic declared input primitive through this session path."""
+        if not isinstance(config, TypingSessionConfig):
+            raise ValueError("config must be a TypingSessionConfig")
+        config.validate()
+        record = self._access(session_id)
+        with self._locked(record):
+            self._require_control(record, agent_id=agent_id, control_token=control_token)
+            self._require_identity(record)
+            backend = self._active_backend(record)
+            first_reference = observation_reference
+            before_receipt_count = len(record.receipt_chain)
+
+            def dispatch(operation: Operation) -> ExecutionReceipt:
+                nonlocal first_reference
+                result = self.execute_operation(
+                    session_id,
+                    operation,
+                    observation_reference=first_reference,
+                    agent_id=agent_id,
+                    control_token=control_token,
+                )
+                first_reference = None
+                return result.receipt
+
+            result = TypingSession(
+                config,
+                backend=backend,
+                browser_config=record.config,
+                operation_executor=dispatch,
+            ).run()
+            new_receipts = record.receipt_chain[before_receipt_count:]
+            return SessionTypingResult(
+                session_id=record.session_id,
+                result=result,
+                receipt_count=len(new_receipts),
+                last_receipt=(new_receipts[-1] if new_receipts else None),
+                receipt_chain_checkpoint=self.receipt_chain_checkpoint(session_id),
             )
 
     def inspect_pages(self, session_id: str) -> tuple[dict[str, Any], ...]:

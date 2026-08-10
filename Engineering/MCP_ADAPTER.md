@@ -70,12 +70,14 @@ lease/handoff boundary.
 
 ## Planner tool surface
 
-MCP tool discovery exposes only these tools:
+MCP tool discovery exposes these governed tools:
 
 | Tool | Effect |
 | --- | --- |
 | `dingdong.get_contract` | Read canonical PlanDocument, Operation, and speculative-plan schemas. |
+| `dingdong.get_capabilities` | Read the compact planner-facing action guide, recovery call, and high-level primitive availability. |
 | `dingdong.observe` | Capture bounded observation evidence and return an opaque observation handle. |
+| `dingdong.reobserve` | Capture current evidence after a dynamic page change and return explicit target-rebinding guidance. |
 | `dingdong.execute` | Submit one canonical `Operation` through the existing governed runtime. |
 | `dingdong.prepare` / `dingdong.commit` | Use existing Browser Two-Phase Commit for consequential work. |
 | `dingdong.prepare_speculation` | Validate one bounded canonical speculative graph without branch dispatch. |
@@ -86,6 +88,24 @@ embedded directly from DingDongDitch's generated canonical schemas. The full
 `PlanDocument` source remains available from `dingdong.get_contract`. The
 adapter does not execute a whole document itself, because that would duplicate
 the retained runtime's execution semantics.
+
+## Planner-facing recovery loop
+
+An unfamiliar planner starts with `dingdong.get_capabilities`, then follows the
+compact loop `observe -> choose canonical Operation -> execute -> receipt ->
+observe/reobserve -> continue`. `dingdong.get_capabilities` lists every
+canonical `ActionType` as contract support, not as a permission grant: the
+host-installed authority remains authoritative for each proposal.
+
+If a dynamic page replaces evidence between observation and dispatch,
+`dingdong.execute` returns either the normal execution receipt with
+`failure_kind: stale_observation_reference` or a governed `mutation_conflict`
+error, each with a `recovery` object. The object points to
+`dingdong.reobserve`, preserving the prior opaque observation handle and
+element id as context. `dingdong.reobserve` returns a new handle and the
+current bounded observation; the planner must select a current `element_id`
+from `interactive_elements` before executing again. The adapter never remaps a
+stale DOM id or silently retries an operation.
 
 Every operation still passes the existing Authority Firewall, signed-plan
 matching, identity verification, control lease, mutation/freshness checks,
@@ -118,8 +138,8 @@ an MCP planner cannot receive or forward its bearer token.
 
 | Surface | Classification | Who may use it |
 | --- | --- | --- |
-| The eight `dingdong.*` tools above | Governed-agent safe | An MCP client/planner, through the stdio connection only. |
-| `dingdong.get_contract`, `dingdong.observe` | Read-only governed tools | An MCP client/planner. Observation is still lease-checked. |
+| The ten `dingdong.*` tools above | Governed-agent safe | An MCP client/planner, through the stdio connection only. |
+| `dingdong.get_contract`, `dingdong.get_capabilities`, `dingdong.observe`, `dingdong.reobserve` | Read-only governed tools | An MCP client/planner. Observation is still lease-checked. |
 | `GovernedMCPServer.from_host_factory`, `MCPHostBinding`, `run_stdio`, `close`, `mcp.bootstrap.load_governed_session` | Trusted-host-only transport setup | The process launcher/application host. Never pass these objects to a model. |
 | `tool_definitions()` | Transport adapter/read-only | MCP hosting code and tests; it only projects canonical schemas. |
 | `call_tool()` | Transport adapter | A trusted embedding or test harness; it has no caller-supplied principal and is not an API for a model to invoke in-process. |

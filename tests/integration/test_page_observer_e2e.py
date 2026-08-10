@@ -159,6 +159,49 @@ def test_replaced_equivalent_element_is_not_fresh(engine):
         backend.stop()
 
 
+def test_replaced_equivalent_element_remains_stale_even_with_declared_locator():
+    backend = PlaywrightBackend(BrowserConfig(headless=True))
+    try:
+        backend.start()
+        backend.page.set_content('<button data-testid="stable" aria-label="Continue">Continue</button><div id="feed"></div>')
+        observation = backend.observe_page()
+        target = observation.interactive_elements[0]
+        backend.page.evaluate("""() => {
+            document.querySelector('#feed').appendChild(document.createElement('img'));
+            const old = document.querySelector('[data-testid=stable]');
+            old.replaceWith(old.cloneNode(true));
+        }""")
+        result = backend.validate_observation_reference(
+            ObservationReference(observation.observation_id, target["element_id"])
+        )
+        assert result.fresh is False
+        assert result.reason == "element_replaced"
+    finally:
+        backend.stop()
+
+
+def test_rebind_is_ambiguous_or_material_change_fail_closed():
+    backend = PlaywrightBackend(BrowserConfig(headless=True))
+    try:
+        backend.start()
+        backend.page.set_content('<button data-testid="stable" aria-label="Continue">Continue</button>')
+        observation = backend.observe_page()
+        target = observation.interactive_elements[0]
+        backend.page.evaluate("""() => {
+            const old = document.querySelector('[data-testid=stable]');
+            old.replaceWith(old.cloneNode(true));
+            const copy = document.querySelector('[data-testid=stable]').cloneNode(true);
+            document.body.appendChild(copy);
+        }""")
+        result = backend.validate_observation_reference(
+            ObservationReference(observation.observation_id, target["element_id"]),
+        )
+        assert result.fresh is False
+        assert result.reason in {"element_disappeared_or_ambiguous", "element_replaced"}
+    finally:
+        backend.stop()
+
+
 def test_observation_waits_for_quiescence_and_publishes_timing_evidence():
     backend = PlaywrightBackend(BrowserConfig(headless=True))
     try:

@@ -26,6 +26,7 @@ import time
 from typing import Any, Callable, Mapping
 
 from dingdongditch.contract.authority import canonical_json_bytes
+from dingdongditch.contract.operation import ActionType
 from dingdongditch.contract.speculation import BranchPreparation, BranchSelection, SpeculationExecutionResult
 from dingdongditch.contract.transaction import CommitResult, PreparedOperation
 from dingdongditch.machine_contract import (
@@ -523,7 +524,42 @@ class GovernedMCPServer:
         }
 
     @staticmethod
-    def _operation_public(result: SessionOperationResult) -> dict[str, Any]:
+    def _stale_recovery(
+        *,
+        observation_handle: str | None = None,
+        element_id: str | None = None,
+        reason: str = "stale_observation_reference",
+    ) -> dict[str, Any]:
+        """Describe the only safe dynamic-page recovery without choosing it.
+
+        A planner must obtain current page evidence and select a target from
+        that evidence again.  The adapter deliberately does not try to map an
+        old element id onto a changed DOM, since that would be locator healing
+        rather than governed execution.
+        """
+        arguments: dict[str, Any] = {}
+        if observation_handle is not None:
+            arguments["previous_observation_handle"] = observation_handle
+        if element_id is not None:
+            arguments["previous_element_id"] = element_id
+        return {
+            "kind": "reobserve_and_rebind",
+            "reason": reason,
+            "tool": "dingdong.reobserve",
+            "arguments": arguments,
+            "next_step": (
+                "Select a current element_id from observation.interactive_elements, then submit "
+                "the operation with the returned observation_handle and that element_id."
+            ),
+        }
+
+    @staticmethod
+    def _operation_public(
+        result: SessionOperationResult,
+        *,
+        observation_handle: str | None = None,
+        element_id: str | None = None,
+    ) -> dict[str, Any]:
         data = result.to_dict()
         # Strictly project the documented SessionOperationResult response.
         # Treat a future/provider-specific extra field as private by default;
@@ -533,7 +569,14 @@ class GovernedMCPServer:
             "operation_id", "receipt", "verdict", "recoverable", "terminal",
             "page_state", "events", "started_at_ms", "finished_at_ms", "duration_ms",
         )
-        return {field: data[field] for field in public_fields if field in data}
+        public = {field: data[field] for field in public_fields if field in data}
+        receipt = public.get("receipt")
+        if isinstance(receipt, Mapping) and receipt.get("failure_kind") == "stale_observation_reference":
+            public["recovery"] = GovernedMCPServer._stale_recovery(
+                observation_handle=observation_handle,
+                element_id=element_id,
+            )
+        return public
 
     @staticmethod
     def _commit_public(result: CommitResult) -> dict[str, Any]:
@@ -545,6 +588,14 @@ class GovernedMCPServer:
 
     def _observe(self, arguments: Any) -> dict[str, Any]:
         self._require_arguments(arguments, allowed=frozenset(), required=frozenset())
+        return self._publish_observation()
+
+    def _publish_observation(
+        self,
+        *,
+        previous: SessionObservation | None = None,
+        previous_element_id: str | None = None,
+    ) -> dict[str, Any]:
         reservation = self._reserve_handle_slot()
         try:
             observed = self._service.observe(**self._service_kwargs())
@@ -556,13 +607,49 @@ class GovernedMCPServer:
             )
         finally:
             self._release_handle_slot(reservation)
-        return {
+        payload = {
             "observation_handle": handle,
             "observed_at_ms": observed.observed_at_ms,
             "control_epoch": observed.control_epoch,
             "mutation_epoch": observed.mutation_epoch,
             "observation": observed.observation.to_dict(),
         }
+        if previous is not None:
+            payload["recovery"] = {
+                "kind": "reobserve_and_rebind",
+                "previous_observation_id": previous.observation.observation_id,
+                "previous_element_id": previous_element_id,
+                "rebind_required": previous_element_id is not None,
+                "next_step": (
+                    "Select a current element_id from observation.interactive_elements, then submit "
+                    "the operation with this observation_handle and that element_id."
+                ),
+            }
+        return payload
+
+    def _reobserve(self, arguments: Any) -> dict[str, Any]:
+        parsed = self._require_arguments(
+            arguments,
+            allowed=frozenset({"previous_observation_handle", "previous_element_id"}),
+            required=frozenset(),
+        )
+        previous = None
+        handle = parsed.get("previous_observation_handle")
+        element_id = parsed.get("previous_element_id")
+        if handle is not None:
+            if not isinstance(handle, str) or not handle:
+                raise _MCPAdapterError("invalid_observation_reference")
+            item = self._take_handle(handle, kind="observation")
+            if not isinstance(item.value, SessionObservation):
+                raise _MCPAdapterError("invalid_handle")
+            previous = item.value
+        if element_id is not None and (
+            not isinstance(element_id, str) or not element_id or len(element_id) > 256
+        ):
+            raise _MCPAdapterError("invalid_observation_reference")
+        if element_id is not None and previous is None:
+            raise _MCPAdapterError("invalid_observation_reference")
+        return self._publish_observation(previous=previous, previous_element_id=element_id)
 
     def _observation_reference(self, arguments: Mapping[str, Any]) -> Any | None:
         handle = arguments.get("observation_handle")
@@ -589,7 +676,43 @@ class GovernedMCPServer:
             operation=operation,
             observation_reference=self._observation_reference(parsed),
         )
-        return self._operation_public(result)
+        return self._operation_public(
+            result,
+            observation_handle=parsed.get("observation_handle"),
+            element_id=parsed.get("element_id"),
+        )
+
+    def _capabilities(self, arguments: Any) -> dict[str, Any]:
+        """Return a compact guide to this stable planner-facing surface.
+
+        This intentionally reports supported contract forms, not host policy
+        grants.  Authority remains host-installed and is evaluated for every
+        actual proposal by the governed runtime.
+        """
+        self._require_arguments(arguments, allowed=frozenset(), required=frozenset())
+        return {
+            "planner_interface_version": "1.0",
+            "primary_calls": {
+                "observe": "dingdong.observe",
+                "available_actions": "dingdong.get_capabilities",
+                "execute": "dingdong.execute",
+                "reobserve": "dingdong.reobserve",
+            },
+            "operation": {
+                "schema_tool": "dingdong.get_contract",
+                "schema_field": "operation_contract",
+                "action_types": [item.value for item in ActionType],
+                "permission_model": "Each proposal remains subject to host authority and runtime freshness checks.",
+            },
+            "additional_governed_calls": {
+                "two_phase_commit": ["dingdong.prepare", "dingdong.commit"],
+                "bounded_speculation": [
+                    "dingdong.prepare_speculation",
+                    "dingdong.select_speculative_branch",
+                    "dingdong.execute_selected_speculative_branch",
+                ],
+            },
+        }
 
     def _prepare(self, arguments: Any) -> dict[str, Any]:
         parsed = self._require_arguments(arguments, allowed=frozenset({"operation"}), required=frozenset({"operation"}))
@@ -734,7 +857,9 @@ class GovernedMCPServer:
         """
         handlers: Mapping[str, Callable[[Any], dict[str, Any]]] = {
             "dingdong.get_contract": self._contract,
+            "dingdong.get_capabilities": self._capabilities,
             "dingdong.observe": self._observe,
+            "dingdong.reobserve": self._reobserve,
             "dingdong.execute": self._execute,
             "dingdong.prepare": self._prepare,
             "dingdong.commit": self._commit,
@@ -747,7 +872,22 @@ class GovernedMCPServer:
         try:
             return False, self._bounded_result(handlers[name](arguments))
         except Exception as exc:
-            return True, self._bounded_result(self._safe_error(exc))
+            payload = self._safe_error(exc)
+            code = payload.get("error", {}).get("code") if isinstance(payload.get("error"), Mapping) else None
+            if name in {"dingdong.execute", "dingdong.reobserve"} and code in {"stale_handle", "mutation_conflict"}:
+                source = arguments if isinstance(arguments, Mapping) else {}
+                payload["recovery"] = self._stale_recovery(
+                    observation_handle=(
+                        source.get("observation_handle")
+                        if isinstance(source.get("observation_handle"), str) else None
+                    ),
+                    element_id=(
+                        source.get("element_id")
+                        if isinstance(source.get("element_id"), str) else None
+                    ),
+                    reason=str(code),
+                )
+            return True, self._bounded_result(payload)
 
     def call_tool(self, name: Any, arguments: Any) -> tuple[bool, dict[str, Any]]:
         """Call a governed MCP tool without exposing JSON-RPC internals.
@@ -781,10 +921,32 @@ class GovernedMCPServer:
                 annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False),
             ),
             Tool(
+                name="dingdong.get_capabilities",
+                title="Discover planner actions and runtime primitives",
+                description="Read the compact planner-facing action guide, schema location, recovery call, and high-level primitive availability.",
+                inputSchema=no_args,
+                annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False),
+            ),
+            Tool(
                 name="dingdong.observe",
                 title="Observe governed browser state",
                 description="Capture bounded browser evidence and return a principal-bound observation handle.",
                 inputSchema=no_args,
+                annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=True),
+            ),
+            Tool(
+                name="dingdong.reobserve",
+                title="Re-observe and rebind after dynamic page state changed",
+                description="Capture current bounded evidence and return a new observation handle plus structured target-rebinding instructions.",
+                inputSchema=_wrapper_schema(
+                    {
+                        "previous_observation_handle": {
+                            "type": "string", "minLength": 16, "maxLength": 128,
+                            "pattern": "^ddd_mcp_observation_[A-Za-z0-9_-]+$",
+                        },
+                        "previous_element_id": {"type": "string", "minLength": 1, "maxLength": 256},
+                    },
+                ),
                 annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=False, openWorldHint=True),
             ),
             Tool(

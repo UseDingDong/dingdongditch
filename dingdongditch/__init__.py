@@ -155,7 +155,6 @@ from dingdongditch.plan_builder import PlanBuilder
 from dingdongditch.inspection import inspect_target, list_dialog_history, observe_page
 from dingdongditch.runtime.session import SessionCheckpoint, SessionPhase, SessionStatus
 from dingdongditch.runtime.typing_session import (
-    TypingFocusPolicy,
     TypingSession,
     TypingSessionConfig,
     TypingSessionResult,
@@ -218,6 +217,7 @@ from dingdongditch.runtime.stateful_session import (
     SessionObservation,
     SessionOperationResult,
     SessionPlanResult,
+    SessionTypingResult,
     StatefulSessionError,
     StatefulSessionRuntime,
     cleanup_expired_sessions,
@@ -242,6 +242,17 @@ from dingdongditch.runtime.governed_agent import (
     GovernedAgentService,
     GovernedAgentSession,
     TrustedHostRuntime,
+)
+from dingdongditch.planner import (
+    PLANNER_INTERFACE_VERSION,
+    PlannerAdapter,
+    PlannerResponse,
+    navigate_operation,
+    click_operation,
+    fill_operation,
+    press_operation,
+    scroll_operation,
+    select_operation,
 )
 from dingdongditch.authentication import (
     AuthEvent, AuthEventType, AuthenticationCallbacks, AuthenticationCapability,
@@ -430,7 +441,6 @@ __all__ = [
     "SessionCheckpoint",
     "SessionPhase",
     "SessionStatus",
-    "TypingFocusPolicy",
     "TypingSession",
     "TypingSessionConfig",
     "TypingSessionResult",
@@ -488,11 +498,21 @@ __all__ = [
     "SessionObservation",
     "SessionOperationResult",
     "SessionPlanResult",
+    "SessionTypingResult",
     "StatefulSessionError",
     "StatefulSessionRuntime",
     "TrustedHostRuntime",
     "GovernedAgentSession",
     "GovernedAgentService",
+    "PLANNER_INTERFACE_VERSION",
+    "PlannerAdapter",
+    "PlannerResponse",
+    "navigate_operation",
+    "click_operation",
+    "fill_operation",
+    "press_operation",
+    "scroll_operation",
+    "select_operation",
     "open_session",
     "get_session",
     "observe_session_page",

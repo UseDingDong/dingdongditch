@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from dingdongditch import PlannerAdapter
 from dingdongditch.contract.speculation import (
     BranchPreparation,
     BranchSelection,
@@ -24,7 +25,7 @@ from dingdongditch.contract.transaction import (
 from dingdongditch.machine_contract import execution_schema, operation_schema, speculative_plan_schema
 from dingdongditch.mcp import MCPDependencyError, MCPHostBinding, MCP_PROTOCOL_REVISION, GovernedMCPServer
 from dingdongditch.runtime.governed_agent import GovernedAgentSession
-from dingdongditch.runtime.stateful_session import SessionObservation
+from dingdongditch.runtime.stateful_session import SessionFailureKind, SessionObservation, StatefulSessionError
 
 
 class _Observation:
@@ -178,9 +179,9 @@ def test_tool_definitions_reuse_generated_contract_definitions_and_exclude_host_
     adapter, _ = _adapter()
     tools = {tool.name: tool for tool in adapter.tool_definitions()}
     assert set(tools) == {
-        "dingdong.get_contract", "dingdong.observe", "dingdong.execute", "dingdong.prepare",
-        "dingdong.commit", "dingdong.prepare_speculation", "dingdong.select_speculative_branch",
-        "dingdong.execute_selected_speculative_branch",
+        "dingdong.get_contract", "dingdong.get_capabilities", "dingdong.observe", "dingdong.reobserve",
+        "dingdong.execute", "dingdong.prepare", "dingdong.commit", "dingdong.prepare_speculation",
+        "dingdong.select_speculative_branch", "dingdong.execute_selected_speculative_branch",
     }
     assert tools["dingdong.execute"].input_schema["$defs"] == operation_schema()["$defs"]
     assert tools["dingdong.execute"].input_schema["properties"]["operation"] == {"$ref": "#/$defs/Operation"}
@@ -189,6 +190,12 @@ def test_tool_definitions_reuse_generated_contract_definitions_and_exclude_host_
     assert not is_error
     assert payload["mcp_protocol_revision"] == MCP_PROTOCOL_REVISION
     assert payload["machine_contract"] == execution_schema()
+
+    is_error, capabilities = adapter.call_tool("dingdong.get_capabilities", {})
+    assert not is_error
+    assert capabilities["primary_calls"]["reobserve"] == "dingdong.reobserve"
+    assert "press_key" in capabilities["operation"]["action_types"]
+    assert "high_level_primitives" not in capabilities
 
 
 def test_execute_uses_host_held_principal_and_server_side_observation_reference():
@@ -213,6 +220,75 @@ def test_execute_uses_host_held_principal_and_server_side_observation_reference(
     assert reference.element_id == "button-1"
     assert reference.control_epoch == 4
     assert reference.mutation_epoch == 9
+
+
+def test_reobserve_returns_a_fresh_handle_and_explicit_rebind_instructions():
+    adapter, _ = _adapter()
+    is_error, observed = adapter.call_tool("dingdong.observe", {})
+    assert not is_error
+
+    is_error, refreshed = adapter.call_tool(
+        "dingdong.reobserve",
+        {
+            "previous_observation_handle": observed["observation_handle"],
+            "previous_element_id": "button-1",
+        },
+    )
+
+    assert not is_error
+    assert refreshed["observation_handle"] != observed["observation_handle"]
+    assert refreshed["recovery"] == {
+        "kind": "reobserve_and_rebind",
+        "previous_observation_id": "observation-1",
+        "previous_element_id": "button-1",
+        "rebind_required": True,
+        "next_step": (
+            "Select a current element_id from observation.interactive_elements, then submit "
+            "the operation with this observation_handle and that element_id."
+        ),
+    }
+
+
+def test_dynamic_mutation_error_preserves_reobserve_context():
+    adapter, service = _adapter()
+    is_error, observed = adapter.call_tool("dingdong.observe", {})
+    assert not is_error
+    service.execute = lambda **_kwargs: (_ for _ in ()).throw(
+        StatefulSessionError("dynamic page changed", failure_kind=SessionFailureKind.MUTATION_CONFLICT)
+    )
+
+    is_error, rejected = adapter.call_tool(
+        "dingdong.execute",
+        {
+            "operation": _operation(),
+            "observation_handle": observed["observation_handle"],
+            "element_id": "button-1",
+        },
+    )
+
+    assert is_error
+    assert rejected["error"]["code"] == "mutation_conflict"
+    assert rejected["recovery"]["arguments"] == {
+        "previous_observation_handle": observed["observation_handle"],
+        "previous_element_id": "button-1",
+    }
+
+
+def test_public_planner_adapter_projects_the_governed_mcp_responses():
+    transport, _ = _adapter()
+    planner = PlannerAdapter(transport)
+
+    capabilities = planner.available_actions()
+    observed = planner.observe()
+    rebound = planner.reobserve(
+        previous_observation_handle=observed.result["observation_handle"],
+        previous_element_id="button-1",
+    )
+
+    assert capabilities.ok and capabilities.result["planner_interface_version"] == "1.0"
+    assert observed.ok and observed.result["observation_handle"]
+    assert rebound.ok and rebound.recovery["kind"] == "reobserve_and_rebind"
+    assert rebound.to_dict()["ok"] is True
 
 
 def test_planner_cannot_forge_identity_or_call_host_only_tools():

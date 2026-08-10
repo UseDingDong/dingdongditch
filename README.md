@@ -81,6 +81,24 @@ capabilities. See [MCP adapter](./Engineering/MCP_ADAPTER.md), the minimal
 The adapter remains model-neutral: any MCP-capable host or agent can use this
 same governed interface, regardless of its model or vendor.
 
+### Planner-facing loop
+
+For an unfamiliar planner, the compact public surface is `observe`,
+`available_actions`, `execute`, and `reobserve`. A trusted host can expose the
+same surface in-process with `PlannerAdapter`; a third-party process discovers
+the equivalent MCP tools (`dingdong.get_capabilities`, `dingdong.observe`,
+`dingdong.execute`, and `dingdong.reobserve`). Each response is JSON-shaped
+and includes the existing observation evidence or execution receipt.
+
+When a dynamic page invalidates an observation, execution returns either the
+normal receipt with `failure_kind: stale_observation_reference` or a governed
+`mutation_conflict` error, plus a structured `recovery` object pointing to
+`dingdong.reobserve`. The fresh observation gets a new opaque handle; the
+planner selects a current `element_id` from that evidence and continues.
+DingDongDitch does not remap a stale DOM target.
+
+See the small [planner loop example](./examples/planner_adapter_loop.py).
+
 ### Python / CLI
 
 Requires Python 3.11 or newer. This runs a repository-local deterministic
