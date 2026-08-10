@@ -430,6 +430,12 @@ def main() -> int:
     parser.add_argument(
         "--complex-url", default="https://maps.google.com/",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=RAW,
+        help="JSON output path (default: benchmark_results.json beside this script)",
+    )
     args = parser.parse_args()
     ROOT.mkdir(parents=True, exist_ok=True)
     started = ns()
@@ -552,8 +558,10 @@ def main() -> int:
             "All screenshots, receipts, inspections, verification, and cleanup remain enabled.",
         ],
     }
-    RAW.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    print(json.dumps({"result": str(RAW), "wall_runtime_ms": payload["wall_runtime_ms"]}))
+    output = args.output
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(json.dumps({"result": str(output), "wall_runtime_ms": payload["wall_runtime_ms"]}))
     return 0
 
 

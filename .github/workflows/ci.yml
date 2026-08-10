@@ -15,13 +15,23 @@ concurrency:
 
 jobs:
   unit:
-    name: Unit tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Unit tests (${{ matrix.os }} / Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          - os: windows-latest
+            python-version: "3.11"
 
     steps:
       - name: Check out repository
@@ -38,14 +48,19 @@ jobs:
         run: python -m pip install -e ".[dev]"
 
       # A small number of boundary and CLI unit tests launch a real browser.
-      - name: Install Chromium
+      - name: Install Chromium and Linux system dependencies
+        if: runner.os == 'Linux'
         run: python -m playwright install --with-deps chromium
+
+      - name: Install Chromium on Windows
+        if: runner.os == 'Windows'
+        run: python -m playwright install chromium
 
       - name: Run unit tests
         run: python -m pytest tests/unit -q
 
   browser-integration:
-    name: Browser integration tests
+    name: Linux browser integration tests
     needs: unit
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -74,3 +89,72 @@ jobs:
           tests/integration/test_run_plan_cli.py
           -k "not headed_and_headless_override"
           -q
+
+  browser-engine:
+    name: Browser engine (${{ matrix.os }} / ${{ matrix.engine }})
+    needs: unit
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        # Playwright's supported bundled engines are exercised headlessly on
+        # both hosted platforms. This is WebKit, not native Safari.
+        include:
+          - os: ubuntu-latest
+            engine: chromium
+          - os: ubuntu-latest
+            engine: firefox
+          - os: ubuntu-latest
+            engine: webkit
+          - os: windows-latest
+            engine: chromium
+          - os: windows-latest
+            engine: firefox
+          - os: windows-latest
+            engine: webkit
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install project
+        run: python -m pip install -e ".[dev]"
+
+      - name: Install Linux browser and system dependencies
+        if: runner.os == 'Linux'
+        run: python -m playwright install --with-deps ${{ matrix.engine }}
+
+      - name: Install Windows browser
+        if: runner.os == 'Windows'
+        run: python -m playwright install ${{ matrix.engine }}
+
+      - name: Run deterministic engine smoke
+        env:
+          DINGDONG_CI_BROWSER_ENGINE: ${{ matrix.engine }}
+        run: python -m pytest tests/integration/test_browser_engine_ci_smoke.py -q
+
+      # This black-box test builds a wheel, installs it with the mcp extra in a
+      # separate environment, starts stdio, discovers tools, and gets VERIFIED.
+      - name: Run installed-wheel governed MCP smoke
+        if: matrix.os == 'ubuntu-latest' && matrix.engine == 'chromium'
+        run: python -m pytest tests/integration/test_mcp_stdio_installed_package.py -q
+
+      # One small local run checks deterministic reliability exactly and uses a
+      # deliberately broad median threshold for noisy shared runners.
+      - name: Run reliability and latency regression gate
+        if: matrix.os == 'ubuntu-latest' && matrix.engine == 'chromium'
+        shell: bash
+        run: |
+          result="$RUNNER_TEMP/dingdongditch-runtime-benchmark.json"
+          python Engineering/runtime_latency_audit/benchmark_runtime.py \
+            --repetitions 2 --complex-repetitions 0 --output "$result"
+          python Engineering/runtime_latency_audit/check_ci_regression.py \
+            --result "$result"

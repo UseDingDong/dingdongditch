@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "scenario": "benchmark_runtime.py --repetitions 2 --complex-repetitions 0",
+  "reliability": {
+    "activities_per_repetition": 7,
+    "verified_activities_per_repetition": 6,
+    "minimum_action_success_rate": 1.0,
+    "maximum_atomic_snapshot_fallback_count": 0
+  },
+  "performance": {
+    "stage": "total_operation",
+    "reference_median_ms": 270.4465,
+    "maximum_median_multiplier": 8.0,
+    "absolute_median_floor_ms": 3000.0
+  }
+}

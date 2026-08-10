@@ -59,7 +59,10 @@ def test_installed_wheel_serves_governed_mcp_stdio_to_external_client(tmp_path, 
     )
     python = _venv_python(venv)
     subprocess.run(
-        [str(python), "-m", "pip", "install", "--no-deps", "--force-reinstall", str(wheel)],
+        [
+            str(python), "-m", "pip", "install", "--no-deps", "--force-reinstall",
+            f"{wheel}[mcp]",
+        ],
         check=True,
         cwd=tmp_path,
         capture_output=True,
