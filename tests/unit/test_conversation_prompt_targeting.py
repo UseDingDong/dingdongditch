@@ -1,8 +1,11 @@
 from types import SimpleNamespace
 
+import pytest
+
 from experiments.gemini_conversation_20260730.run_experiment import prompt_elements
 
 
+@pytest.mark.experimental
 def test_chatgpt_prompt_targeting_excludes_occluded_file_inputs():
     prompt = {
         "element_id": "prompt",

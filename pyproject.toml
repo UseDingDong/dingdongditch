@@ -51,3 +51,6 @@ dingdongditch = ["schemas/*.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+  "experimental: non-production experimental coverage that is reported separately from required CI",
+]

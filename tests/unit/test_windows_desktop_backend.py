@@ -1,4 +1,5 @@
 import platform
+import sys
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,11 @@ from dingdongditch.contract.screenshot import (
 )
 
 
+requires_windows_desktop = pytest.mark.skipif(
+    sys.platform != "win32", reason="requires the Windows desktop backend"
+)
+
+
 def test_capabilities_are_honest_and_allowlisted():
     caps = WindowsDesktopBackend.capabilities()
     assert caps["domain"] == "windows_desktop"
@@ -36,6 +42,7 @@ def test_unsupported_platform_is_gated(monkeypatch):
     assert raised.value.failure_kind == "unsupported_platform"
 
 
+@requires_windows_desktop
 def test_window_discovery_and_uniqueness(monkeypatch, tmp_path):
     backend = WindowsDesktopBackend(artifact_root=tmp_path)
     backend._owned_windows = {
@@ -58,6 +65,7 @@ def test_window_discovery_and_uniqueness(monkeypatch, tmp_path):
     assert raised.value.failure_kind == "window_not_unique"
 
 
+@requires_windows_desktop
 def test_bounded_wait_reports_timeout(tmp_path):
     backend = WindowsDesktopBackend(artifact_root=tmp_path)
     with pytest.raises(DesktopBackendError) as raised:
@@ -67,6 +75,7 @@ def test_bounded_wait_reports_timeout(tmp_path):
     assert raised.value.failure_kind == "test_timeout"
 
 
+@requires_windows_desktop
 def test_safe_close_ownership_is_ledger_based(tmp_path):
     backend = WindowsDesktopBackend(artifact_root=tmp_path)
     assert backend.owned_window_handles == ()
@@ -75,6 +84,7 @@ def test_safe_close_ownership_is_ledger_based(tmp_path):
     assert backend._owned_windows[44].source == "test"
 
 
+@requires_windows_desktop
 def test_mandatory_desktop_redaction_fails_before_capture_or_publication(
     monkeypatch, tmp_path
 ):
@@ -106,6 +116,7 @@ def test_mandatory_desktop_redaction_fails_before_capture_or_publication(
     assert list(tmp_path.iterdir()) == []
 
 
+@requires_windows_desktop
 def test_nonmandatory_desktop_capture_behavior_is_preserved(monkeypatch, tmp_path):
     backend = WindowsDesktopBackend(artifact_root=tmp_path)
 
@@ -140,6 +151,7 @@ def test_nonmandatory_desktop_capture_behavior_is_preserved(monkeypatch, tmp_pat
     assert result["redacted_regions"] == []
 
 
+@requires_windows_desktop
 def test_declared_desktop_regions_are_blacked_out_and_receipted(monkeypatch, tmp_path):
     from PIL import Image, ImageGrab
 
@@ -181,6 +193,7 @@ def test_declared_desktop_regions_are_blacked_out_and_receipted(monkeypatch, tmp
         DesktopRedactionRegion("past-bottom", 0, 5, 1, 2),
     ],
 )
+@requires_windows_desktop
 def test_out_of_bounds_desktop_region_fails_without_publication(
     monkeypatch, tmp_path, region
 ):
@@ -206,6 +219,7 @@ def test_out_of_bounds_desktop_region_fails_without_publication(
     assert list(tmp_path.iterdir()) == []
 
 
+@requires_windows_desktop
 def test_masking_failure_is_explicit_and_never_publishes(monkeypatch, tmp_path):
     from PIL import Image, ImageDraw, ImageGrab
 

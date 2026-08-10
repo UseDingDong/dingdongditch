@@ -44,8 +44,13 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Install project
-        run: python -m pip install -e ".[dev]"
+      - name: Install project and build tooling on Linux
+        if: runner.os == 'Linux'
+        run: python -m pip install "setuptools>=68" wheel -e ".[dev]"
+
+      - name: Install project, Windows desktop support, and build tooling
+        if: runner.os == 'Windows'
+        run: python -m pip install "setuptools>=68" wheel -e ".[dev,windows-desktop]"
 
       # A small number of boundary and CLI unit tests launch a real browser.
       - name: Install Chromium and Linux system dependencies
@@ -56,8 +61,42 @@ jobs:
         if: runner.os == 'Windows'
         run: python -m playwright install chromium
 
-      - name: Run unit tests
-        run: python -m pytest tests/unit -q
+      - name: Run required unit tests on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m pytest tests/unit -m "not experimental" -q
+
+      - name: Run required unit tests on Windows
+        if: runner.os == 'Windows'
+        run: python -m pytest tests/unit -m "not experimental" -q
+
+  # This imports a deliberately experimental conversation prototype. Keep its
+  # result visible without making it a release-gating result for the governed
+  # runtime.
+  experimental-prompt-targeting:
+    name: Experimental prompt-targeting test (non-blocking)
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install project
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run experimental prompt-targeting coverage
+        run: >-
+          python -m pytest
+          tests/unit/test_conversation_prompt_targeting.py::test_chatgpt_prompt_targeting_excludes_occluded_file_inputs
+          -q
 
   browser-integration:
     name: Linux browser integration tests
