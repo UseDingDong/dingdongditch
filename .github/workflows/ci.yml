@@ -70,11 +70,10 @@ jobs:
         run: python -m pytest tests/unit -m "not experimental" -q
 
   # This imports a deliberately experimental conversation prototype. Keep its
-  # result visible without making it a release-gating result for the governed
-  # runtime.
+  # real failure visible without making it a release-gating result for the
+  # governed runtime.
   experimental-prompt-targeting:
     name: Experimental prompt-targeting test (non-blocking)
-    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -93,10 +92,18 @@ jobs:
         run: python -m pip install -e ".[dev]"
 
       - name: Run experimental prompt-targeting coverage
+        id: prompt_targeting
+        continue-on-error: true
         run: >-
           python -m pytest
           tests/unit/test_conversation_prompt_targeting.py::test_chatgpt_prompt_targeting_excludes_occluded_file_inputs
           -q
+
+      - name: Record expected experimental failure
+        if: steps.prompt_targeting.outcome == 'failure'
+        run: >-
+          echo "::warning title=Experimental prompt-targeting coverage failed as expected::
+          This experimental prototype is reported but does not gate the governed runtime."
 
   browser-integration:
     name: Linux browser integration tests
@@ -123,7 +130,7 @@ jobs:
 
       - name: Run deterministic browser integration tests
         run: >-
-          python -m pytest
+          xvfb-run -a python -m pytest
           tests/integration/test_single_operation_e2e.py
           tests/integration/test_run_plan_cli.py
           -k "not headed_and_headless_override"
