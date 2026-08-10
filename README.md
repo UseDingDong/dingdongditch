@@ -41,11 +41,44 @@ retains policy installation, secrets, browser lifecycle, and handoff-token
 delivery; the machine contract is a proposal format. The exact trust boundary
 and limitations are in [Execution governance](./Engineering/EXECUTION_GOVERNANCE.md).
 
+## MCP quick start
+
+DingDongDitch provides an optional, stdio-only MCP adapter for the stable MCP
+protocol revision **2026-07-28**. It is transport glue over a host-created
+`GovernedAgentService` lease, not a second browser executor.
+
+```text
+MCP-capable agent
+        ↓
+DingDongDitch MCP
+        ↓
+governed browser execution
+        ↓
+structured receipt
+```
+
+```bash
+python -m pip install "dingdongditch[mcp]"
+dingdongditch mcp-stdio --bootstrap my_host:build --principal local-agent
+```
+
+`my_host.build(principal)` is trusted host code that installs the authority
+envelope and opens a `GovernedAgentSession` for exactly that principal. An MCP
+client then discovers only governed observation, execution, two-phase-commit,
+and bounded-speculation tools. It never receives browser objects, control or
+handoff tokens, secrets, private keys, trust registries, or policy-installation
+capabilities. See [MCP adapter](./Engineering/MCP_ADAPTER.md), the minimal
+[bootstrap example](./examples/mcp_host_bootstrap.py), and the no-key local
+[MCP demo](./examples/mcp_stdio_demo.py).
+
+The adapter remains model-neutral: any MCP-capable host or agent can use this
+same governed interface, regardless of its model or vendor.
+
 ## Connect Any Agent
 
-v0.5.0 publishes a versioned, Draft 2020-12 machine contract for external
-planners. The generic JSON Schema path is the primary integration mechanism;
-vendor envelopes are optional conveniences.
+DingDongDitch publishes a versioned, Draft 2020-12 machine contract for
+external planners. The generic JSON Schema path is the primary integration
+mechanism; vendor envelopes are optional conveniences.
 
 Your model is not part of the DingDongDitch architecture. It does not matter
 whether the plan comes from GPT, Claude, Gemini, Grok, DeepSeek, Llama, Qwen,
@@ -168,7 +201,7 @@ See the runnable [host API example](./examples/host_execution_plan.py) and the
 [JSON plan guide](./examples/plans/README.md). The CLI and runtime never
 author plans, reinterpret intent, or choose recovery steps.
 
-## What v0.5.0 provides
+## What DingDongDitch provides
 
 - A governed host/planner boundary with Authority Firewall, Two-Phase Commit,
   Quorum Verification, receipt-chain checkpoints, and Cross-Agent Hot Handoff.

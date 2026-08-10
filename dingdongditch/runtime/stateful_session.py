@@ -385,9 +385,17 @@ class StatefulSessionRuntime:
         options: PageObservationOptions | None = None,
         *,
         page_id: str | None = None,
+        agent_id: str | None = None,
+        control_token: str | None = None,
     ) -> SessionObservation:
         record = self._access(session_id)
         with self._locked(record):
+            # Legacy trusted-host callers retain the historic read-only path
+            # when neither lease value is supplied.  Governed transports pass
+            # both values so a controller superseded by a handoff cannot keep
+            # observing the retained browser through a stale capability.
+            if agent_id is not None or control_token is not None:
+                self._require_control(record, agent_id=agent_id, control_token=control_token)
             backend = self._active_backend(record)
             if page_id is not None:
                 self._select_backend_page(backend, page_id)
@@ -621,6 +629,24 @@ class StatefulSessionRuntime:
                 "mutation_epoch": record.mutation_epoch,
                 "last_evidence": (record.mutation_last_evidence.to_dict() if record.mutation_last_evidence else None),
             }
+
+    def governed_control_epoch(
+        self,
+        session_id: str,
+        *,
+        agent_id: str,
+        control_token: str,
+    ) -> int:
+        """Return the current epoch only after validating the control lease.
+
+        Transport adapters use this to bind their own opaque handles to the
+        same handoff epoch as the underlying governed capability.  It exposes
+        no browser object or control token and has no legacy ungoverned path.
+        """
+        record = self._access(session_id)
+        with self._locked(record):
+            self._require_control(record, agent_id=agent_id, control_token=control_token)
+            return record.control_epoch
 
     def attestation_material(
         self, session_id: str, checkpoint: ReceiptChainCheckpoint,

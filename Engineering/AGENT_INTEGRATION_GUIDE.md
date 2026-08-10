@@ -135,6 +135,17 @@ tool = gemini.execution_plan_tool()  # parametersJsonSchema
 The helper changes only envelope field spelling. The canonical schema remains
 authoritative.
 
+## Optional MCP transport
+
+For MCP-capable clients, install the optional `dingdongditch[mcp]` extra and
+run `dingdongditch mcp-stdio --bootstrap module:factory --principal NAME`.
+The trusted bootstrap factory receives `NAME`, installs the host policy, and
+returns a `GovernedAgentSession` for that exact lease owner. The MCP adapter
+then projects the same canonical operation/speculation schemas and delegates
+every call to `GovernedAgentService`; it does not create a model-specific
+grammar or a raw browser tool surface. Detailed setup and the protocol pin are
+in [MCP_ADAPTER.md](./MCP_ADAPTER.md).
+
 ## All other planners and model categories
 
 There is intentionally no branded adapter when it would only duplicate the

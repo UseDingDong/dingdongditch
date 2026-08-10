@@ -15,6 +15,7 @@ from dingdongditch.authentication import AuthenticationCapability
 from dingdongditch.contract.authority import AuthorityEnvelope
 from dingdongditch.contract.handoff import AgentHandoffCheckpoint
 from dingdongditch.contract.observation import ObservationReference
+from dingdongditch.contract.observation import PageObservationOptions
 from dingdongditch.contract.operation import Operation
 from dingdongditch.contract.transaction import CommitResult, PreparedOperation
 from dingdongditch.contract.signed_plan import SignedPlanAuthority, TrustedPlanVerifier
@@ -82,7 +83,12 @@ class GovernedAgentSession:
         return self._agent_id
 
     def observe(self, **kwargs: Any) -> SessionObservation:
-        return self._runtime.observe_page(self._session_id, **kwargs)
+        return self._runtime.observe_page(
+            self._session_id,
+            agent_id=self._agent_id,
+            control_token=self._control_token,
+            **kwargs,
+        )
 
     def execute(
         self,
@@ -336,10 +342,44 @@ class GovernedAgentService:
     def execute(
         self, *, session_id: str, agent_id: str, control_token: str,
         authenticated_agent_id: str, operation: Operation | Mapping[str, Any],
+        observation_reference: ObservationReference | None = None,
     ) -> SessionOperationResult:
         self._principal(agent_id, authenticated_agent_id)
         return self._runtime.execute_operation(
-            session_id, _operation(operation), agent_id=agent_id, control_token=control_token,
+            session_id, _operation(operation), observation_reference=observation_reference,
+            agent_id=agent_id, control_token=control_token,
+        )
+
+    def observe(
+        self, *, session_id: str, agent_id: str, control_token: str,
+        authenticated_agent_id: str, options: PageObservationOptions | None = None,
+        page_id: str | None = None,
+    ) -> SessionObservation:
+        """Return bounded browser evidence only for the lease owner.
+
+        This is intentionally a thin authentication/control check around the
+        retained session's existing observation implementation.  It exposes
+        neither backend/page objects nor a separate observer semantics.
+        """
+        self._principal(agent_id, authenticated_agent_id)
+        return self._runtime.observe_page(
+            session_id,
+            options,
+            page_id=page_id,
+            agent_id=agent_id,
+            control_token=control_token,
+        )
+
+    def control_epoch(
+        self, *, session_id: str, agent_id: str, control_token: str,
+        authenticated_agent_id: str,
+    ) -> int:
+        """Read the current control epoch after principal and lease checks."""
+        self._principal(agent_id, authenticated_agent_id)
+        return self._runtime.governed_control_epoch(
+            session_id,
+            agent_id=agent_id,
+            control_token=control_token,
         )
 
     def prepare(

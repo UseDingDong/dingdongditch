@@ -4,7 +4,7 @@ Public API for typed contracts and execute_operation / execute_plan.
 Does not include a planner, site explorer, or workflow author.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 from dingdongditch.contract.browser import (
     BrowserChannel,

@@ -7,6 +7,7 @@ Not a planner, explorer, or workflow author. No second executor.
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
 from dataclasses import replace
 import json
 import sys
@@ -142,6 +143,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Schema to print, or 'list' for available names",
     )
     schema.add_argument("--output", default=None, help="Optional JSON output path")
+
+    mcp = sub.add_parser(
+        "mcp-stdio",
+        help="Run the optional governed MCP stdio adapter using a trusted host bootstrap",
+    )
+    mcp.add_argument(
+        "--bootstrap",
+        required=True,
+        help="Trusted host module:factory returning a GovernedAgentSession",
+    )
+    mcp.add_argument(
+        "--principal",
+        required=True,
+        help="Transport-authenticated principal selected by the trusted process launcher",
+    )
+    mcp.add_argument(
+        "--retain-on-disconnect",
+        action="store_true",
+        help="Host-only: do not close the governed session when the stdio client disconnects",
+    )
     return parser
 
 
@@ -262,6 +283,41 @@ def schema_command(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
+def mcp_stdio_command(args: argparse.Namespace) -> int:
+    """Start the optional MCP adapter without putting diagnostics on stdout."""
+    try:
+        from dingdongditch.mcp import GovernedMCPServer, MCPDependencyError
+        from dingdongditch.mcp.bootstrap import MCPBootstrapError, load_governed_session
+
+        # The factory runs on the adapter's dedicated browser-owning thread.
+        # Sync Playwright cannot safely share MCP's async protocol loop.
+        def host_factory(principal: str):
+            return load_governed_session(
+                args.bootstrap,
+                authenticated_principal=principal,
+            )
+
+        # A bootstrap is host code and could emit diagnostics.  The stdio
+        # transport reserves stdout for JSON-RPC from process start, not just
+        # after the SDK claims its file descriptor.
+        with redirect_stdout(sys.stderr):
+            server = GovernedMCPServer.from_host_factory(
+                host_factory,
+                authenticated_principal=args.principal,
+                close_on_disconnect=not args.retain_on_disconnect,
+            )
+        server.run_stdio()
+        return EXIT_SUCCESS
+    except (MCPDependencyError, MCPBootstrapError, ValueError) as exc:
+        _print_err(f"error=mcp_startup_failed message={type(exc).__name__}")
+        return EXIT_INVALID_INPUT
+    except Exception as exc:
+        # Never put a traceback or potentially sensitive host-bootstrap detail
+        # on the MCP stdout wire.  The transport itself emits only JSON-RPC.
+        _print_err(f"error=mcp_server_failed message={type(exc).__name__}")
+        return EXIT_INTERNAL_ERROR
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -273,6 +329,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return session_command(args)
     if args.command == "schema":
         return schema_command(args)
+    if args.command == "mcp-stdio":
+        return mcp_stdio_command(args)
     _print_err(f"error=unknown_command message={args.command}")
     return EXIT_INVALID_INPUT
 

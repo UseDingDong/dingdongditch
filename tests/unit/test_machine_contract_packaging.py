@@ -42,10 +42,13 @@ def test_machine_contract_resources_work_from_installed_wheel(tmp_path):
     wheel = next(wheel_dir.glob("dingdongditch-*.whl"))
     with zipfile.ZipFile(wheel) as archive:
         names = set(archive.namelist())
+        metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+        metadata = archive.read(metadata_name).decode("utf-8")
     assert "dingdongditch/schemas/plan-document.schema.json" in names
     assert "dingdongditch/adapters/openai.py" in names
     assert "dingdongditch/adapters/anthropic.py" in names
     assert "dingdongditch/adapters/gemini.py" in names
+    assert "Requires-Dist: mcp==2.0.0; extra == \"mcp\"" in metadata
 
     venv = tmp_path / "venv"
     subprocess.run(

@@ -26,6 +26,7 @@ Governing documents for long-term architectural consistency.
 | [`THREE_LAYER_RECEIPT_ARCHITECTURE.md`](./THREE_LAYER_RECEIPT_ARCHITECTURE.md) | Core receipt, bounded evidence, and artifact boundary |
 | [`REMAINING_INFRASTRUCTURE_BOUNDARIES.md`](./REMAINING_INFRASTRUCTURE_BOUNDARIES.md) | Network, portable state, profiles, secrets, and WebAuthn boundaries |
 | [`EXECUTION_GOVERNANCE.md`](./EXECUTION_GOVERNANCE.md) | The ten advanced execution-governance controls: authority, transactions, quorum, receipt chains/checkpoints, handoff, signed plans, identity, mutation arbitration, attestation, and bounded speculation |
+| [`MCP_ADAPTER.md`](./MCP_ADAPTER.md) | Optional standards-compliant MCP stdio adapter, host/principal binding, canonical contract projection, and security boundary |
 
 **How to use:** Principles say how to build. Non-goals say what not to become.
 Phase 2 says what the project *is* responsible for. Research explains why.

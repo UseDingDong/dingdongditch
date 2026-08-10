@@ -7,6 +7,44 @@ breaking changes.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-09
+
+### Added
+
+- Optional, standards-compliant, stdio-only **MCP adapter** for MCP protocol
+  revision **2026-07-28**, using the exactly pinned optional dependency
+  `mcp==2.0.0`. It is a thin transport adapter over a host-created
+  `GovernedAgentService`, not a second execution engine.
+- Discoverable governed MCP tools for canonical contract discovery,
+  observation, execution, Two-Phase Commit preparation/commit, and bounded
+  speculative execution. The MCP tool inputs derive from DingDongDitch's
+  canonical machine-contract schemas.
+- Trusted-host bootstrap and deterministic local MCP demonstration, including
+  an installed-wheel client/server smoke path with no external AI API.
+
+### Security hardening
+
+- MCP transport principals are host-authenticated and bound to governed
+  sessions. Planner-provided identity fields are rejected rather than trusted.
+- Opaque, server-side prepare/speculation handles are principal, session,
+  control-epoch, type, and expiry bound; they are single-use, bounded, cleared
+  on disconnect, and cannot be replayed across a principal or control change.
+- The adapter rejects malformed, oversized, deeply nested, unknown-tool, and
+  schema-widening requests before browser work. Results and errors are bounded
+  and redact host-only tokens, browser objects, paths, secrets, keys, and
+  privileged exception details.
+- All MCP browser work is delegated through `GovernedAgentService`, preserving
+  Authority Firewall, signed-plan, identity, mutation, transaction, quorum,
+  receipt-chain, handoff, attestation, and speculative-execution checks.
+
+### Limitations
+
+- MCP support is stdio only. The trusted host owns process launch and principal
+  authentication; no HTTP listener or remote authentication scheme is exposed.
+- The adapter deliberately does not expose host policy/trust configuration,
+  secret providers, browser/runtime objects, raw execution APIs, checkpoint
+  trust decisions, private keys, or bearer handoff/control capabilities.
+
 ## [0.5.0] - 2026-08-09
 
 ### Added
